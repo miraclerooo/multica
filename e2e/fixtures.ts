@@ -19,6 +19,15 @@ interface TestWorkspace {
   slug: string;
 }
 
+export interface TestProjectDocument {
+  id: string;
+  title: string;
+  content: string;
+  revision: number;
+  is_pinned: boolean;
+  position: number;
+}
+
 export type TestIssueStatus =
   | "backlog"
   | "todo"
@@ -198,6 +207,30 @@ export class TestApiClient {
     const project = await res.json();
     this.createdProjectIds.push(project.id);
     return project as { id: string; title: string; status: string };
+  }
+
+  async setLanguage(language: string) {
+    const res = await this.authedFetch("/api/me", { method: "PATCH", body: JSON.stringify({ language }) });
+    if (!res.ok) throw new Error(`set language failed: ${res.status}`);
+  }
+
+  /** Documents are removed when their registered project is cleaned up. */
+  async createProjectDocument(projectId: string, data: { title: string; content?: string; is_pinned?: boolean; position?: number }): Promise<TestProjectDocument> {
+    const res = await this.authedFetch(`/api/projects/${projectId}/documents`, { method: "POST", body: JSON.stringify(data) });
+    if (!res.ok) throw new Error(`create document failed: ${res.status} ${await res.text()}`);
+    return res.json();
+  }
+
+  async getProjectDocument(projectId: string, documentId: string): Promise<TestProjectDocument> {
+    const res = await this.authedFetch(`/api/projects/${projectId}/documents/${documentId}`);
+    if (!res.ok) throw new Error(`get document failed: ${res.status} ${await res.text()}`);
+    return res.json();
+  }
+
+  async updateProjectDocument(projectId: string, documentId: string, data: { revision: number; content?: string; title?: string; is_pinned?: boolean }): Promise<TestProjectDocument> {
+    const res = await this.authedFetch(`/api/projects/${projectId}/documents/${documentId}`, { method: "PATCH", body: JSON.stringify(data) });
+    if (!res.ok) throw new Error(`update document failed: ${res.status} ${await res.text()}`);
+    return res.json();
   }
 
   /** Create a workspace custom property definition; archived on cleanup. */

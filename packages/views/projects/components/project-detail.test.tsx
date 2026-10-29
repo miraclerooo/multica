@@ -25,10 +25,13 @@ vi.mock("../../workflows/project-workflow-menu", () => ({ ProjectWorkflowMenu: (
 vi.mock("../../workflows/project-workflow-row", () => ({ ProjectWorkflowControl: () => null }));
 
 vi.mock("@tanstack/react-query", () => ({
+  queryOptions: (options: unknown) => options,
   useQuery: (options: { queryKey?: readonly unknown[] }) => {
     switch (options.queryKey?.[0]) {
       case "project-detail":
         return { data: PROJECT, isLoading: false };
+      case "project-documents":
+        return { data: { documents: [], total: 6 }, isLoading: false };
       case "members":
         return {
           data: [{ user_id: "user-1", name: "User One", role: mocks.role }],
@@ -79,6 +82,7 @@ vi.mock("@multica/core/chat", () => ({
 }));
 
 vi.mock("@multica/core/paths", () => ({
+  useWorkspaceSlug: () => "test-workspace",
   useWorkspacePaths: () => ({
     projects: () => "/test-workspace/projects",
   }),

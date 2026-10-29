@@ -182,5 +182,20 @@
     "clear_filter": "Clear filter",
     "no_matches": "No matching rows",
     "close": "Close"
+  },
+  "document_commands": {
+    "h2": "Heading 2",
+    "h3": "Heading 3",
+    "bold": "Bold",
+    "italic": "Italic",
+    "inline_code": "Inline code",
+    "bullet": "Bullet list",
+    "task": "Task list",
+    "quote": "Quote",
+    "table": "Table",
+    "code": "Code block",
+    "mermaid": "Mermaid diagram",
+    "toolbar": "Document formatting",
+    "insert": "/ Insert block"
   }
 }

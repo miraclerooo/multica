@@ -178,5 +178,20 @@
     "clear_filter": "絞り込みを解除",
     "no_matches": "一致する行がありません",
     "close": "閉じる"
+  },
+  "document_commands": {
+    "h2": "見出し 2",
+    "h3": "見出し 3",
+    "bold": "太字",
+    "italic": "斜体",
+    "inline_code": "インラインコード",
+    "bullet": "箇条書き",
+    "task": "タスクリスト",
+    "quote": "引用",
+    "table": "表",
+    "code": "コードブロック",
+    "mermaid": "Mermaid 図",
+    "toolbar": "書式設定",
+    "insert": "/ ブロックを挿入"
   }
 }

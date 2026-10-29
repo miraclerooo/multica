@@ -1,6 +1,9 @@
 export { projectKeys, projectListOptions, projectDetailOptions } from "./queries";
 export { useCreateProject, useUpdateProject, useDeleteProject } from "./mutations";
 export { useProjectDraftStore } from "./draft-store";
+export * from "./document-queries";
+export * from "./document-mutations";
+export * from "./document-drafts";
 export {
   useProjectViewStore,
   PROJECT_SORT_DEFAULT_DIRECTION,

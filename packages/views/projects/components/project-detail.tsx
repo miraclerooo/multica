@@ -18,7 +18,8 @@ import { memberListOptions, agentListOptions } from "@multica/core/workspace/que
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useIssuesScope } from "@multica/core/issues/stores";
 import { useRecentContextStore } from "@multica/core/chat";
-import { useWorkspacePaths } from "@multica/core/paths";
+import { useWorkspacePaths, useWorkspaceSlug } from "@multica/core/paths";
+import { projectDocumentsOptions } from "@multica/core/projects";
 import { useActorName } from "@multica/core/workspace/hooks";
 import { PROJECT_STATUS_ORDER, PROJECT_STATUS_CONFIG, PROJECT_PRIORITY_ORDER } from "@multica/core/projects/config";
 import { getProjectIssueMetrics } from "./project-issue-metrics";
@@ -78,6 +79,7 @@ import {
 import { useT } from "../../i18n";
 import { useProjectStatusLabels, useProjectPriorityLabels } from "./labels";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
+import { ProjectDocsSurface, type ProjectDocsHandle } from "./project-docs-surface";
 
 // Property row — sidebar property display
 
@@ -118,6 +120,17 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const wsId = useWorkspaceId();
   const wsPaths = useWorkspacePaths();
   const router = useNavigation();
+  const workspaceSlug = useWorkspaceSlug() ?? undefined;
+  const docsRef = useRef<ProjectDocsHandle>(null);
+  const docsActive = router.searchParams.get("tab") === "docs";
+  const { data: projectDocuments } = useQuery(projectDocumentsOptions(wsId, projectId, workspaceSlug));
+  const selectProjectTab = async (docs: boolean) => {
+    if (docsActive && !await (docsRef.current?.flush() ?? Promise.resolve(true))) return;
+    const params = new URLSearchParams(router.searchParams);
+    params.delete("doc"); params.delete("mode");
+    if (docs) params.set("tab", "docs"); else params.delete("tab");
+    router.push(`${router.pathname}${params.size ? `?${params}` : ""}`);
+  };
   const userId = useAuthStore((s) => s.user?.id);
   const { data: project, isLoading } = useQuery(projectDetailOptions(wsId, projectId));
   useRegisterCommandBarContext(
@@ -307,6 +320,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${propertiesOpen ? "rotate-90" : ""}`} />
         </button>
         {propertiesOpen && <div className="space-y-0.5 pl-2">
+          <PropRow label={t(($) => $.docs.tab)}>
+            <button type="button" className="hover:text-brand" onClick={() => void selectProjectTab(true)}>{t(($) => $.docs.document_count, { count: projectDocuments?.total ?? 0 })}</button>
+          </PropRow>
           <PropRow label={t(($) => $.table.status)}>
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -570,10 +586,14 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             }
           />
 
-          <IssueSurface
+          <nav aria-label={t(($) => $.docs.project_views)} className="flex h-10 shrink-0 items-stretch gap-6 border-b border-border px-5">
+            <button type="button" aria-current={!docsActive ? "page" : undefined} className={cn("flex items-center gap-1.5 border-b-2 px-0.5 text-label", !docsActive ? "border-primary font-semibold text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")} onClick={() => void selectProjectTab(false)}>{t(($) => $.docs.issues_tab)}<span className="rounded-full bg-muted px-1.5 text-micro">{project.issue_count}</span></button>
+            <button type="button" aria-current={docsActive ? "page" : undefined} className={cn("flex items-center gap-1.5 border-b-2 px-0.5 text-label", docsActive ? "border-primary font-semibold text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")} onClick={() => void selectProjectTab(true)}>{t(($) => $.docs.tab)}<span className="rounded-full bg-brand/10 px-1.5 text-micro text-brand">{projectDocuments?.total ?? 0}</span></button>
+          </nav>
+          {docsActive ? <ProjectDocsSurface ref={docsRef} project={project} /> : <IssueSurface
             scope={issueScope}
             modes={["board", "list", "table", "swimlane", "gantt"]}
-          />
+          />}
           </div>
         </ResizablePanel>
         {!isMobile && <ResizableHandle />}
