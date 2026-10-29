@@ -1372,6 +1372,21 @@ type Project struct {
 	WorkflowID  pgtype.UUID        `json:"workflow_id"`
 }
 
+type ProjectDocument struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+	Title       string             `json:"title"`
+	Content     string             `json:"content"`
+	IsPinned    bool               `json:"is_pinned"`
+	Position    int32              `json:"position"`
+	Revision    int64              `json:"revision"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	UpdatedBy   pgtype.UUID        `json:"updated_by"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ProjectResource struct {
 	ID           pgtype.UUID        `json:"id"`
 	ProjectID    pgtype.UUID        `json:"project_id"`

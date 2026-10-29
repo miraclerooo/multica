@@ -144,3 +144,49 @@ export interface ListProjectResourcesResponse {
   resources: ProjectResource[];
   total: number;
 }
+
+export interface ProjectDocumentMetadata {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  title: string;
+  is_pinned: boolean;
+  position: number;
+  revision: number;
+  /** User IDs, matching member.user_id and project.lead_id for member leads. */
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectDocument extends ProjectDocumentMetadata {
+  content: string;
+}
+
+export interface ProjectDocumentSummary extends ProjectDocumentMetadata {
+  /** First 240 Unicode characters of Markdown; render as plain text. */
+  excerpt: string;
+}
+
+export interface ListProjectDocumentsResponse {
+  documents: ProjectDocumentSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface CreateProjectDocumentRequest {
+  title: string;
+  content?: string;
+  is_pinned?: boolean;
+  position?: number;
+}
+
+export interface UpdateProjectDocumentRequest {
+  revision: number;
+  title?: string;
+  content?: string;
+  is_pinned?: boolean;
+  position?: number;
+}

@@ -1,4 +1,6 @@
 import type { ZodType } from "zod";
+import { parseProjectDocument, parseProjectDocuments } from "../projects/document-schema";
+import type { CreateProjectDocumentRequest, UpdateProjectDocumentRequest } from "../types/project";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -4107,6 +4109,36 @@ export class ApiClient {
 
   async deleteProject(id: string): Promise<void> {
     await this.fetch(`/api/projects/${id}`, { method: "DELETE" });
+  }
+
+  // Project documents
+  async listProjectDocuments(projectId: string, pagination: { limit?: number; offset?: number } = {}) {
+    const params = new URLSearchParams();
+    if (pagination.limit !== undefined) params.set("limit", String(pagination.limit));
+    if (pagination.offset !== undefined) params.set("offset", String(pagination.offset));
+    const endpoint = `/api/projects/${projectId}/documents${params.size ? `?${params}` : ""}`;
+    return parseProjectDocuments(await this.fetch<unknown>(endpoint), `GET ${endpoint}`);
+  }
+
+  async getProjectDocument(projectId: string, documentId: string) {
+    const endpoint = `/api/projects/${projectId}/documents/${documentId}`;
+    return parseProjectDocument(await this.fetch<unknown>(endpoint), `GET ${endpoint}`);
+  }
+
+  async createProjectDocument(projectId: string, data: CreateProjectDocumentRequest) {
+    const endpoint = `/api/projects/${projectId}/documents`;
+    const raw = await this.fetch<unknown>(endpoint, { method: "POST", body: JSON.stringify(data) });
+    return parseProjectDocument(raw, `POST ${endpoint}`);
+  }
+
+  async updateProjectDocument(projectId: string, documentId: string, data: UpdateProjectDocumentRequest) {
+    const endpoint = `/api/projects/${projectId}/documents/${documentId}`;
+    const raw = await this.fetch<unknown>(endpoint, { method: "PATCH", body: JSON.stringify(data) });
+    return parseProjectDocument(raw, `PATCH ${endpoint}`);
+  }
+
+  async deleteProjectDocument(projectId: string, documentId: string, revision: number): Promise<void> {
+    await this.fetch(`/api/projects/${projectId}/documents/${documentId}?revision=${encodeURIComponent(revision)}`, { method: "DELETE" });
   }
 
   // Project resources

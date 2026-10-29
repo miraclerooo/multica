@@ -2175,6 +2175,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/resources", h.CreateProjectResource)
 					r.Put("/resources/{resourceId}", h.UpdateProjectResource)
 					r.Delete("/resources/{resourceId}", h.DeleteProjectResource)
+					r.Get("/documents", h.ListProjectDocuments)
+					r.Get("/documents/{docId}", h.GetProjectDocument)
+					r.With(handler.RequireHumanActor).Post("/documents", h.CreateProjectDocument)
+					r.With(handler.RequireHumanActor).Patch("/documents/{docId}", h.UpdateProjectDocument)
+					r.With(handler.RequireHumanActor).Delete("/documents/{docId}", h.DeleteProjectDocument)
 				})
 			})
 

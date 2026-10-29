@@ -67,6 +67,9 @@ export type WSEventType =
   | "project:created"
   | "project:updated"
   | "project:deleted"
+  | "project_document:created"
+  | "project_document:updated"
+  | "project_document:deleted"
   | "squad:created"
   | "squad:updated"
   | "squad:deleted"
@@ -98,6 +101,14 @@ export interface WSMessage<T = unknown> {
   payload: T;
   actor_id?: string;
   actor_type?: string;
+}
+
+/** Invalidate the project's document list and this document's detail query. */
+export interface ProjectDocumentChangedPayload {
+  project_id: string;
+  document_id: string;
+  /** Last persisted revision on delete; the new revision on create/update. */
+  revision: number;
 }
 
 export interface IssueCreatedPayload {
