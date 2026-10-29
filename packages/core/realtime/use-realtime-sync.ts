@@ -12,6 +12,7 @@ import { defaultStorage } from "../platform/storage";
 import { getCurrentWsId, getCurrentSlug } from "../platform/workspace-storage";
 import { issueKeys } from "../issues/queries";
 import { projectKeys } from "../projects/queries";
+import { projectDocumentKeys } from "../projects/document-queries";
 import { pinKeys } from "../pins/queries";
 import { autopilotKeys } from "../autopilots/queries";
 import { runtimeKeys } from "../runtimes/queries";
@@ -656,6 +657,7 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
     qc.invalidateQueries({ queryKey: workspaceKeys.skills(wsId) });
     qc.invalidateQueries({ queryKey: workspaceKeys.invitations(wsId) });
     qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: projectDocumentKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: autopilotKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.all(wsId) });
@@ -1069,6 +1071,23 @@ export function useRealtimeSync(
     ]);
 
     const unsubAny = ws.onAny((msg) => {
+      const documentWsId = getCurrentWsId();
+      if (documentWsId && msg.type.startsWith("project_document:")) {
+        const payload = msg.payload as { project_id?: string; document_id?: string };
+        if (typeof payload?.project_id === "string" && typeof payload.document_id === "string") {
+          void qc.invalidateQueries({ queryKey: projectDocumentKeys.list(documentWsId, payload.project_id) });
+          void qc.invalidateQueries({ queryKey: projectDocumentKeys.detail(documentWsId, payload.project_id, payload.document_id) });
+        }
+        return;
+      }
+      if (documentWsId && msg.type === "project:deleted") {
+        const payload = msg.payload as { project_id?: string };
+        if (typeof payload?.project_id === "string") qc.removeQueries({ queryKey: projectDocumentKeys.project(documentWsId, payload.project_id) });
+      }
+      if (msg.type === "workspace:deleted") {
+        const payload = msg.payload as { workspace_id?: string };
+        if (typeof payload?.workspace_id === "string") qc.removeQueries({ queryKey: projectDocumentKeys.all(payload.workspace_id) });
+      }
       if (specificEvents.has(msg.type)) return;
       const prefix = msg.type.split(":")[0] ?? "";
       if (prefix === "agent" || (prefix === "task" && msg.type !== "task:progress")) {

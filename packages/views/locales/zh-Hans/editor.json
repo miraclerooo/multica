@@ -178,5 +178,20 @@
     "clear_filter": "清除筛选",
     "no_matches": "没有匹配的行",
     "close": "关闭"
+  },
+  "document_commands": {
+    "h2": "二级标题",
+    "h3": "三级标题",
+    "bold": "粗体",
+    "italic": "斜体",
+    "inline_code": "行内代码",
+    "bullet": "无序列表",
+    "task": "任务列表",
+    "quote": "引用",
+    "table": "表格",
+    "code": "代码块",
+    "mermaid": "Mermaid 图表",
+    "toolbar": "文档排版",
+    "insert": "/ 快捷插入"
   }
 }

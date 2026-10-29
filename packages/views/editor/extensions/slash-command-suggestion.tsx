@@ -27,6 +27,7 @@ import {
   pickerNavigationDirection,
 } from "../../common/picker-keys";
 import { isTriggerArmedAt } from "./suggestion-trigger-arming";
+import { runDocumentCommand, type DocumentCommand } from "../document-commands";
 
 const MAX_ITEMS = 20;
 
@@ -44,6 +45,7 @@ export interface SlashCommandItem {
    * so the visible string stays localized (the typed `/label` does not).
    */
   descriptionKey?: BuiltinCommandKey;
+  documentCommand?: DocumentCommand;
 }
 
 interface SlashCommandListProps {
@@ -128,9 +130,11 @@ export const SlashCommandList = forwardRef<
   // Built-in commands carry an i18n key so the visible description stays
   // localized; skills carry a raw description string from their config.
   const describe = (item: SlashCommandItem): string | undefined =>
-    item.descriptionKey === "note"
-      ? t(($) => $.slash_command.commands.note)
-      : item.description;
+    item.documentCommand
+      ? t(($) => $.document_commands[item.documentCommand!])
+      : item.descriptionKey === "note"
+        ? t(($) => $.slash_command.commands.note)
+        : item.description;
 
   return (
     // Height budget clamps to min(design max, viewport-aware
@@ -165,6 +169,27 @@ export const SlashCommandList = forwardRef<
 });
 
 const NO_MATCH = 4;
+
+export function createDocumentCommandSuggestion(): Omit<SuggestionOptions<SlashCommandItem>, "editor"> {
+  const pluginKey = new PluginKey("documentCommandSuggestion");
+  const commands: DocumentCommand[] = ["h2", "h3", "table", "code", "mermaid", "bullet", "task", "quote"];
+  return {
+    char: "/",
+    pluginKey,
+    shouldShow: ({ editor, range }) => isTriggerArmedAt(editor, range.from),
+    items: ({ query }) => commands.filter(id => id.includes(query.toLowerCase())).map(id => ({ id, label: id, documentCommand: id })),
+    command: ({ editor, range, props }) => {
+      editor.chain().focus().deleteRange(range).run();
+      if (props.documentCommand) runDocumentCommand(editor, props.documentCommand);
+    },
+    render: createSuggestionPopupRender<SlashCommandItem, SlashCommandItem, SlashCommandListRef, SlashCommandListProps>({
+      pluginKey,
+      component: SlashCommandList,
+      getProps: props => ({ items: props.items, query: props.query, command: props.command, hideOnEmpty: true }),
+      onKeyDown: (ref, props) => ref?.onKeyDown(props) ?? false,
+    }),
+  };
+}
 
 /** Returns the match tier: exact name, prefix, substring, then description. */
 function skillMatchRank(

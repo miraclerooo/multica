@@ -14,6 +14,7 @@ import { workspaceWorkingAgentsKeys } from "../agents/queries";
 import { workspaceKeys } from "../workspace/queries";
 import { issueStatusKeys } from "../issue-statuses/queries";
 import { issueWorkflowKeys } from "../issue-workflows/queries";
+import { projectDocumentKeys } from "../projects/document-queries";
 import {
   markWorkspaceDeletePending,
   unmarkWorkspaceDeletePending,
@@ -135,7 +136,8 @@ describe("useRealtimeSync — ws instance change", () => {
     // Awaited rather than counted synchronously: the inbox unread summary
     // refresh cancels any in-flight request before invalidating (see
     // onInboxSummaryInvalidate), so that one lands after the synchronous ones.
-    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(32));
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(33));
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: projectDocumentKeys.all("ws-1") });
   });
 
   it("does not re-invalidate when rerendered with the same ws instance", () => {
@@ -190,6 +192,17 @@ describe("useRealtimeSync — ws instance change", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it.each(["project_document:created", "project_document:updated", "project_document:deleted"])("invalidates the matching document and list after %s", type => {
+    const ws = createMockWs();
+    renderHook(() => useRealtimeSync(ws, stores), { wrapper: createWrapper(qc) });
+    const onAny = vi.mocked(ws.onAny).mock.calls[0]![0];
+    invalidateSpy.mockClear();
+    onAny({ type, payload: { project_id: "p1", document_id: "d1", revision: 3 } } as never);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: projectDocumentKeys.list("ws-1", "p1") });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: projectDocumentKeys.detail("ws-1", "p1", "d1") });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: projectDocumentKeys.all("ws-2") });
   });
 
   it("invalidates agent projections when a daemon changes liveness", () => {

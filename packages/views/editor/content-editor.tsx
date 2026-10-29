@@ -69,6 +69,7 @@ import { repairEmptyListItems } from "./utils/repair-list-items";
 import { resolveClickIntent, useAppOrigin } from "../navigation";
 import { openLink, isMentionHref } from "./utils/link-handler";
 import { EditorBubbleMenu } from "./bubble-menu";
+import { DocumentToolbar } from "./document-toolbar";
 import { posFromAnchor, type TextAnchor } from "./text-anchor";
 import { useLinkHover, LinkHoverCard } from "./link-hover-card";
 import { AttachmentDownloadProvider } from "./attachment-download-context";
@@ -176,6 +177,8 @@ interface ContentEditorBaseProps {
   onUploadingChange?: (uploading: boolean) => void;
   /** Show the floating formatting toolbar on text selection. Defaults true. */
   showBubbleMenu?: boolean;
+  /** Persistent block-formatting controls for document editors. */
+  showFormattingToolbar?: boolean;
   /** Additional non-editing action for the current text selection. */
   selectionAction?: { label: string; onSelect: () => boolean | void };
   /**
@@ -202,7 +205,7 @@ interface ContentEditorBaseProps {
    * lists the active agent's skills (chat); "command" shows the fixed built-in
    * command menu (issue comments), e.g. /note.
    */
-  slashCommandMode?: "skill" | "command";
+  slashCommandMode?: "skill" | "command" | "document";
   /**
    * Quick actions to offer in the "command" `/` menu, plus the resolver that
    * turns a pick into the text it would post (MUL-5465). Read through
@@ -374,6 +377,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
       pasteAsFileThreshold,
       onUploadingChange,
       showBubbleMenu = true,
+      showFormattingToolbar = false,
       selectionAction,
       currentIssueId,
       disableMentions = false,
@@ -1021,6 +1025,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
           className="relative flex flex-1 min-h-full flex-col"
           onMouseDown={handleContainerMouseDown}
         >
+          {showFormattingToolbar && <DocumentToolbar editor={editor} />}
           <EditorContent className="flex flex-1 flex-col" editor={editor} />
           {showBubbleMenu && (
             <EditorBubbleMenu editor={editor} currentIssueId={currentIssueId} selectionAction={selectionAction} />

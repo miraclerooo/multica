@@ -4112,33 +4112,33 @@ export class ApiClient {
   }
 
   // Project documents
-  async listProjectDocuments(projectId: string, pagination: { limit?: number; offset?: number } = {}) {
+  async listProjectDocuments(projectId: string, pagination: { limit?: number; offset?: number } = {}, workspaceSlug?: string) {
     const params = new URLSearchParams();
     if (pagination.limit !== undefined) params.set("limit", String(pagination.limit));
     if (pagination.offset !== undefined) params.set("offset", String(pagination.offset));
     const endpoint = `/api/projects/${projectId}/documents${params.size ? `?${params}` : ""}`;
-    return parseProjectDocuments(await this.fetch<unknown>(endpoint), `GET ${endpoint}`);
+    return parseProjectDocuments(await this.fetch<unknown>(endpoint, { headers: workspaceHeader(workspaceSlug) }), `GET ${endpoint}`);
   }
 
-  async getProjectDocument(projectId: string, documentId: string) {
+  async getProjectDocument(projectId: string, documentId: string, workspaceSlug?: string) {
     const endpoint = `/api/projects/${projectId}/documents/${documentId}`;
-    return parseProjectDocument(await this.fetch<unknown>(endpoint), `GET ${endpoint}`);
+    return parseProjectDocument(await this.fetch<unknown>(endpoint, { headers: workspaceHeader(workspaceSlug) }), `GET ${endpoint}`);
   }
 
-  async createProjectDocument(projectId: string, data: CreateProjectDocumentRequest) {
+  async createProjectDocument(projectId: string, data: CreateProjectDocumentRequest, workspaceSlug?: string) {
     const endpoint = `/api/projects/${projectId}/documents`;
-    const raw = await this.fetch<unknown>(endpoint, { method: "POST", body: JSON.stringify(data) });
+    const raw = await this.fetch<unknown>(endpoint, { method: "POST", body: JSON.stringify(data), headers: workspaceHeader(workspaceSlug) });
     return parseProjectDocument(raw, `POST ${endpoint}`);
   }
 
-  async updateProjectDocument(projectId: string, documentId: string, data: UpdateProjectDocumentRequest) {
+  async updateProjectDocument(projectId: string, documentId: string, data: UpdateProjectDocumentRequest, workspaceSlug?: string) {
     const endpoint = `/api/projects/${projectId}/documents/${documentId}`;
-    const raw = await this.fetch<unknown>(endpoint, { method: "PATCH", body: JSON.stringify(data) });
+    const raw = await this.fetch<unknown>(endpoint, { method: "PATCH", body: JSON.stringify(data), headers: workspaceHeader(workspaceSlug) });
     return parseProjectDocument(raw, `PATCH ${endpoint}`);
   }
 
-  async deleteProjectDocument(projectId: string, documentId: string, revision: number): Promise<void> {
-    await this.fetch(`/api/projects/${projectId}/documents/${documentId}?revision=${encodeURIComponent(revision)}`, { method: "DELETE" });
+  async deleteProjectDocument(projectId: string, documentId: string, revision: number, workspaceSlug?: string): Promise<void> {
+    await this.fetch(`/api/projects/${projectId}/documents/${documentId}?revision=${encodeURIComponent(revision)}`, { method: "DELETE", headers: workspaceHeader(workspaceSlug) });
   }
 
   // Project resources

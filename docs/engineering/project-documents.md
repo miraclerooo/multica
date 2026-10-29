@@ -1,9 +1,10 @@
 # Project documents API
 
 Project documents persist Markdown specifications inside an existing project.
-This change supplies the database, HTTP API, shared TypeScript client, response
-schemas, and invalidation events. The Docs UI, editor uploads, categories,
-full-text search, and Agent context injection are separate work. There is no
+The API supplies persistence, revision checks, response schemas, and invalidation
+events. The shared web/desktop Documents tab uses this contract as described below.
+Editor uploads, categories, full-text search, and Agent context injection remain
+separate work. There is no
 `include_in_context` field or public sharing endpoint.
 
 ## Access and identity
@@ -144,6 +145,41 @@ reveals a newer revision. Workspace/project deletion uses the existing
 `workspace:deleted` / `project:deleted` events to clear descendant caches; it does
 not emit one event per removed document. Refetch on reconnect: events are
 invalidation hints, not a durable document history or a total order of changes.
+
+## Web and desktop frontend
+
+The shared `ProjectDetail` provides Issues / Documents tabs. `?tab=docs` opens
+the board; `?tab=docs&doc=<UUID>` opens a document. The existing navigation adapter
+handles both web routing and desktop tabs; no platform-specific document route
+is required. List summaries are fetched through all pages for title/excerpt
+filtering. There are no invented category or Agent-context fields.
+
+The editor uses `ContentEditor` and the sanitized `ReadonlyContent` renderer.
+Local drafts persist with their base revision in workspace-scoped storage.
+Changes debounce for one second. Mode/document/tab changes flush pending editor
+text; unmount and page-hide also flush, with browser drafts retained if the
+network cannot finish. Save requests, including pin and order changes, serialize
+per document and send **`revision`**, never `expected_revision`. Reordering uses
+the existing PATCH `position` field; there is no bulk reorder endpoint, so a
+partial failure refreshes the list and surfaces the affected document.
+
+409 pauses automatic saving and retains the local draft. Loading the remote
+version requires an explicit confirmation; copying the local draft remains
+available. 403/404 and ambiguous network failures retain drafts as well. Retry
+refetches before writing and never advances a stale draft's revision to force
+an overwrite. Delete confirms against a captured revision and waits for success.
+Creation has no automatic retries because the API has no idempotency key.
+
+Document events invalidate the list and matching detail; reconnect invalidates
+all document queries in the active workspace. An incoming revision never replaces
+a dirty draft. The current UI does not upload document attachments or inject
+documents into Agent context.
+
+Verification: `e2e/project-documents.spec.ts` exercises the real API for creation,
+editing, navigation flush, a competing 409 write, reload recovery, and deletion.
+The permission scenario uses a real ordinary member and a controlled 403 response
+to verify that the browser preserves a denied draft. Save serialization, limits,
+pagination, and deletion eligibility have canonical core tests.
 
 ## Persistence and rollout
 

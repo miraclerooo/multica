@@ -178,5 +178,20 @@
     "clear_filter": "清除篩選",
     "no_matches": "沒有匹配的行",
     "close": "關閉"
+  },
+  "document_commands": {
+    "h2": "二級標題",
+    "h3": "三級標題",
+    "bold": "粗體",
+    "italic": "斜體",
+    "inline_code": "行內程式碼",
+    "bullet": "項目清單",
+    "task": "任務清單",
+    "quote": "引言",
+    "table": "表格",
+    "code": "程式碼區塊",
+    "mermaid": "Mermaid 圖表",
+    "toolbar": "文件排版",
+    "insert": "/ 快速插入"
   }
 }

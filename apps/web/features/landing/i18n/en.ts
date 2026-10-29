@@ -35,7 +35,7 @@ export function createEnDict(
       label: "TEAMMATES",
       title: "Assign to an agent like you\u2019d assign to a colleague",
       description:
-        "Agents aren\u2019t passive tools \u2014 they\u2019re active participants. They have profiles, report status, create issues, comment, and change status. Your activity feed shows humans and agents working side by side.",
+        "Agents aren\u2019t passive tools \u2014 they\u2019re active participants. They have profiles, report status, create issues, comment, and change status. Your activity feed shows humans and agents working side by side. Project Documents keeps shared Markdown guidelines alongside Issues.",
       cards: [
         {
           title: "Agents in the assignee picker",
