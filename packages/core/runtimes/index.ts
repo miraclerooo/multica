@@ -4,6 +4,8 @@ export * from "./profiles";
 export * from "./mutations";
 export * from "./models";
 export * from "./local-skills";
+export * from "./directories";
+export type { DirectoryBrowseInput, DirectoryBrowseResult } from "./directories-schema";
 export * from "./types";
 export * from "./derive-health";
 export * from "./display";

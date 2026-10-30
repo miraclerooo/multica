@@ -76,14 +76,10 @@ describe("ProjectResourcesSection — local directory row", () => {
     expect(screen.queryByText("game-client")).not.toBeInTheDocument();
   });
 
-  // The row used to carry a pencil that turned the name into a text box. A
-  // folder is identified by its path, so the only thing that "edit" changed
-  // was the row's title, and beside the branch and remove controls it read as
-  // a broken edit action (MUL-7525). What remains are the two settings that
-  // change how tasks run on the folder.
-  it("offers the execution mode and remove actions, and no rename", () => {
+  // Editing changes the actual path and mode rather than only the row label.
+  it("offers path/mode editing and remove actions, and no rename", () => {
     renderWithI18n(<ProjectResourcesSection projectId="p1" />);
-    expect(screen.getByRole("button", { name: strings.mode_edit_tooltip })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: en.directory_config.edit_title })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: strings.remove_tooltip })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /rename/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();

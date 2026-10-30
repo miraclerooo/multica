@@ -441,6 +441,7 @@ type DaemonHeartbeatAckPayload struct {
 	PendingUpdate           *DaemonHeartbeatPendingUpdate           `json:"pending_update,omitempty"`
 	PendingModelList        *DaemonHeartbeatPendingModelList        `json:"pending_model_list,omitempty"`
 	PendingLocalSkills      *DaemonHeartbeatPendingLocalSkills      `json:"pending_local_skills,omitempty"`
+	PendingDirectoryBrowse  *PendingDirectoryBrowse                 `json:"pending_directory_browse,omitempty"`
 	PendingLocalSkillImport *DaemonHeartbeatPendingLocalSkillImport `json:"pending_local_skill_import,omitempty"`
 	// PendingLocalSkillImports carries multiple import requests in a single
 	// heartbeat so the daemon can process them concurrently. Old daemons
