@@ -875,6 +875,7 @@ export interface AppConfigResponse {
   // (MUL-3254). Older servers omit the field; treat that as false.
   cdn_signed?: boolean;
   allow_signup: boolean;
+  password_login?: boolean;
   google_client_id?: string;
   posthog_key?: string;
   posthog_host?: string;
@@ -1153,6 +1154,7 @@ export const AppConfigSchema = z.object({
   attachment_public_url: OptionalStringSchema,
   cdn_signed: BooleanWithDefaultSchema(false),
   allow_signup: BooleanWithDefaultSchema(true),
+  password_login: BooleanWithDefaultSchema(false),
   google_client_id: OptionalStringSchema,
   posthog_key: OptionalStringSchema,
   posthog_host: OptionalStringSchema,
@@ -1175,6 +1177,7 @@ export const EMPTY_APP_CONFIG: AppConfigResponse = {
   attachment_public_url: "",
   cdn_signed: false,
   allow_signup: true,
+  password_login: false,
   google_client_id: "",
   daemon_server_url: "",
   daemon_app_url: "",
@@ -2703,6 +2706,11 @@ export const UserSchema = z.object({
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
 }).loose();
+
+export const PasswordLoginResponseSchema = z.object({
+  token: z.string().min(1),
+  user: UserSchema.extend({ id: z.string().min(1), email: z.string().email() }),
+});
 
 export const EMPTY_USER: User = {
   id: "",

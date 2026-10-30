@@ -58,8 +58,21 @@ func ParseTrustedProxies(raw string) []*net.IPNet {
 // RemoteAddr is used. This matches the project's conservative trust
 // model (see health_realtime.go).
 func RateLimit(rdb redis.UniversalClient, limit int, window time.Duration, trustedProxies []*net.IPNet) func(http.Handler) http.Handler {
+	return rateLimit(rdb, limit, window, trustedProxies, false)
+}
+
+// StrictRateLimit rejects requests if counters cannot be enforced. Password
+// authentication must not silently lose brute-force protection during an outage.
+func StrictRateLimit(rdb redis.UniversalClient, limit int, window time.Duration, trustedProxies []*net.IPNet) func(http.Handler) http.Handler {
+	return rateLimit(rdb, limit, window, trustedProxies, true)
+}
+
+func rateLimit(rdb redis.UniversalClient, limit int, window time.Duration, trustedProxies []*net.IPNet, failClosed bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		if rdb == nil {
+			if failClosed {
+				return http.HandlerFunc(rateLimitUnavailable)
+			}
 			return next
 		}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,6 +82,11 @@ func RateLimit(rdb redis.UniversalClient, limit int, window time.Duration, trust
 
 			count, err := rateLimitScript.Run(ctx, rdb, []string{key}, int(window.Seconds())).Int64()
 			if err != nil {
+				if failClosed {
+					slog.Warn("ratelimit: redis error; rejecting request", "error", err)
+					rateLimitUnavailable(w, r)
+					return
+				}
 				slog.Warn("ratelimit: redis error; allowing request", "error", err, "ip", ip)
 				next.ServeHTTP(w, r)
 				return
@@ -131,4 +149,10 @@ func rateLimitKey(path, ip string) string {
 	sanitized := strings.TrimPrefix(path, "/")
 	sanitized = strings.ReplaceAll(sanitized, "/", ":")
 	return fmt.Sprintf("mul:ratelimit:%s:%s", sanitized, ip)
+}
+
+func rateLimitUnavailable(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	json.NewEncoder(w).Encode(map[string]string{"error": "authentication rate limiter unavailable"})
 }

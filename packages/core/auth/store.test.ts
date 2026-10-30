@@ -189,3 +189,18 @@ describe("authStore", () => {
     expect(store.getState().expired).toBe(false);
   });
 });
+
+
+describe("password session storage", () => {
+  it.each([true, false])("uses the existing cookie/token boundary (cookieAuth=%s)", async (cookieAuth) => {
+    const storage = makeStorage();
+    const api = makeApi();
+    api.passwordLogin = vi.fn().mockResolvedValue({ token: "test-session", user: fakeUser });
+    const store = createAuthStore({ api, storage, cookieAuth });
+    await store.getState().loginWithPassword("alice@example.com", "test-only-password");
+    expect(store.getState().status).toBe("authenticated");
+    expect(store.getState().user).toEqual(fakeUser);
+    expect(storage.snapshot().multica_token).toBe(cookieAuth ? undefined : "test-session");
+    expect(JSON.stringify(storage.snapshot())).not.toContain("test-only-password");
+  });
+});

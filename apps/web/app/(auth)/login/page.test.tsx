@@ -173,6 +173,14 @@ describe("LoginPage", () => {
       expect(mockListWorkspaces).not.toHaveBeenCalled();
     });
 
+    it("keeps an authenticated visitor on the first-password setup form", async () => {
+      searchParamsState.params = new URLSearchParams("password_setup=1");
+      authStateRef.state.user = onboardedUser;
+      render(<LoginPage />, { wrapper: createWrapper() });
+      await waitFor(() => expect(mockListWorkspaces).not.toHaveBeenCalled());
+      expect(mockReplace).not.toHaveBeenCalled();
+    });
+
     it("fetches the workspace list before redirecting a visitor who arrived authenticated", async () => {
       // Cold Query cache on a fresh page load: reading it would say "no
       // workspaces" and misroute to /workspaces/new. The effect must fetch.

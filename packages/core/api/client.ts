@@ -317,6 +317,7 @@ import {
   EMPTY_LIST_WEBHOOK_DELIVERIES_RESPONSE,
   EMPTY_WEBHOOK_DELIVERY,
   AppConfigSchema,
+  PasswordLoginResponseSchema,
   type AppConfigResponse,
   type RefreshSessionResponse,
   RefreshSessionResponseSchema,
@@ -1000,6 +1001,18 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify({ email, code }),
     });
+  }
+
+  async passwordLogin(email: string, password: string, setupToken?: string): Promise<LoginResponse> {
+    const path = setupToken ? "/auth/password/setup" : "/auth/password";
+    const raw = await this.fetch<unknown>(path, {
+      method: "POST",
+      body: JSON.stringify({ email, password, setup_token: setupToken }),
+    });
+    const checked = PasswordLoginResponseSchema.safeParse(raw);
+    const result = parseWithFallback<LoginResponse | null>(checked.success ? checked.data : null, PasswordLoginResponseSchema, null, { endpoint: path });
+    if (!result) throw new Error("Invalid sign-in response");
+    return result;
   }
 
   async googleLogin(code: string, redirectUri: string): Promise<LoginResponse> {

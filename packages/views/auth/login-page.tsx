@@ -19,6 +19,8 @@ import {
   InputOTPGroup,
   InputOTPSlot,
 } from "@multica/ui/components/ui/input-otp";
+import { useConfigStore } from "@multica/core/config";
+import { PasswordSignIn } from "./password-sign-in";
 import { useAuthStore } from "@multica/core/auth";
 import { workspaceKeys } from "@multica/core/workspace/queries";
 import { api } from "@multica/core/api";
@@ -103,6 +105,7 @@ export function LoginPage({
 }: LoginPageProps) {
   const { t } = useT("auth");
   const qc = useQueryClient();
+  const passwordLogin = useConfigStore((state) => state.passwordLogin);
   const [step, setStep] = useState<"email" | "code" | "cli_confirm">("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -331,6 +334,22 @@ export function LoginPage({
         </Card>
       </div>
     );
+  }
+
+  if (passwordLogin) {
+    return <PasswordSignIn logo={logo} extra={extra} onLogin={async (email, password, setupToken) => {
+      if (cliCallback) {
+        const { token } = await api.passwordLogin(email, password, setupToken);
+        onTokenObtained?.();
+        redirectToCliCallback(cliCallback.url, token, cliCallback.state);
+        return;
+      }
+      await useAuthStore.getState().loginWithPassword(email, password, setupToken);
+      const wsList = await api.listWorkspaces();
+      qc.setQueryData(workspaceKeys.list(), wsList);
+      onTokenObtained?.();
+      onSuccess();
+    }} />;
   }
 
   // Code verification step
