@@ -141,6 +141,10 @@ var pgBigmOperatorClass = extensionOperatorClass{
 // interrupted build would otherwise leave a permanently unusable index.
 var concurrentIndexCleanups = map[string]string{
 	"594_agent_task_process_cleanup_index":                      "idx_agent_task_queue_process_cleanup",
+	"596_user_password_user_id_index":                           "user_password_user_id_idx",
+	"598_project_document_directory_index":                      "idx_project_document_directory",
+	"599_project_document_revision_index":                       "idx_project_document_revision_version",
+	"600_project_document_revision_workspace_index":             "idx_project_document_revision_workspace",
 	"563_search_index_change_changed_at_index":                  "idx_search_index_change_changed_at",
 	"562_search_index_change_workspace_index":                   "idx_search_index_change_workspace_xid",
 	"552_agent_task_history_page_index":                         "idx_agent_task_queue_history_page",

@@ -43,6 +43,26 @@ import { ProjectDemo } from "@/components/demos/project-demo";
 
 智能体执行项目内的任务时，项目名称和描述会加入本次执行的上下文。所有相关运行都需要知道的信息写在描述里，比如目标、技术边界、交付约定；只与单条任务相关的要求写在那条任务中。
 
+## Specs & Docs 文档
+
+在网页或桌面端的项目中打开 **Specs & Docs 文档**，按核心 Spec 规范、项目指南与纪要分组浏览，或检索标题、REQ 编号和正文。新建 Spec 会带入背景与目标、需求、WHEN/THEN 场景和验收清单模板，也可以创建普通空白文档。
+
+**阅读/直编**、**双栏对照**、**源码**操作同一份 Markdown。快捷按钮可插入需求、场景和验收项；直编视图中的验收勾选同步到 Markdown。点击**保存修订**或按 Cmd/Ctrl+S 提交新版本；未保存的修改保留为当前设备的草稿，切换文档、返回项目及刷新后仍可恢复。放弃修改需要确认。
+
+右栏展示最近的人类与智能体编辑者、可解析的项目资源引用和修订历史。**版本对比**包含双方标题与正文。遇到冲突时，可以保留草稿、另存本地副本，或对比并确认基于已查看的版本保存；若远端再次更新，保存仍会被拒绝。
+
+项目运行可发现文档资源，并通过与界面相同的 API 读取最新已保存的修订：
+
+```bash
+multica project document list <project-id> --output json
+multica project document get <project-id> <document-id-or-uri> --output markdown
+multica project document create <project-id> --kind spec --title "功能规范"
+multica project document update <project-id> <document-id> --base-version 2 --title "功能规范" --body-file ./spec.md
+multica project document history <project-id> <document-id>
+```
+
+`--base-version` 必须是实际读取过的版本。收到 409 后先读取并对比新版本，再重新提交。引用格式为 `multica://project/<project-id>/documents/<document-id>`，可用 `project document get` 读取；资源接口 `GET /api/projects/{id}/resources/{resourceId}/content` 也能解析最新内容。浏览器中未保存的草稿不会提供给运行。
+
 ## 添加资源
 
 项目资源告诉智能体使用哪些代码和工作目录：

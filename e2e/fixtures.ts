@@ -6,6 +6,7 @@
 
 import "./env";
 import pg from "pg";
+import { createHash, randomBytes } from "node:crypto";
 
 // `||` (not `??`) so an empty `NEXT_PUBLIC_API_URL=` in .env still falls
 // back to localhost. dotenv sets unset-vs-empty both as "" — treating them
@@ -54,6 +55,33 @@ export class TestApiClient {
   private createdProjectIds: string[] = [];
   private seededIssueIds: string[] = [];
   private createdPropertyIds: string[] = [];
+  private documentAgentFixtures: { agentId: string; runtimeId: string; taskId: string }[] = [];
+
+  /** Raw authenticated requests for endpoint and optimistic-concurrency assertions. */
+  async request(path: string, init?: RequestInit) {
+    return this.authedFetch(path, init);
+  }
+
+  /** A bound agent credential without starting an external agent process. */
+  async seedDocumentAgent(issueId: string) {
+    if (!this.workspaceId || !this.email) throw new Error("Select a workspace first");
+    const db = new pg.Client(DATABASE_URL);
+    await db.connect();
+    try {
+      const user = await db.query<{ id: string }>('SELECT id FROM "user" WHERE email = $1', [this.email]);
+      const userId = user.rows[0]!.id;
+      const runtime = await db.query<{ id: string }>(`INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, status, owner_id, last_seen_at) VALUES ($1, 'Document test runtime', 'local', 'codex', 'online', $2, now()) RETURNING id`, [this.workspaceId, userId]);
+      const runtimeId = runtime.rows[0]!.id;
+      const agent = await db.query<{ id: string }>(`INSERT INTO agent (workspace_id, name, instructions, runtime_mode, runtime_config, runtime_id, visibility, permission_mode, owner_id) VALUES ($1, 'Spec maintainer', '', 'local', '{}'::jsonb, $2, 'private', 'private', $3) RETURNING id`, [this.workspaceId, runtimeId, userId]);
+      const agentId = agent.rows[0]!.id;
+      const task = await db.query<{ id: string }>(`INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, started_at) VALUES ($1, $2, $3, 'running', now()) RETURNING id`, [agentId, runtimeId, issueId]);
+      const taskId = task.rows[0]!.id;
+      this.documentAgentFixtures.push({ runtimeId, agentId, taskId });
+      const token = `mat_${randomBytes(32).toString("hex")}`;
+      await db.query(`INSERT INTO task_token (token_hash, task_id, agent_id, workspace_id, user_id, expires_at) VALUES ($1, $2, $3, $4, $5, now() + interval '1 hour')`, [createHash("sha256").update(token).digest("hex"), taskId, agentId, this.workspaceId, userId]);
+      return { token, agentId, taskId, workspaceId: this.workspaceId };
+    } finally { await db.end(); }
+  }
 
   async login(email: string, name: string) {
     const client = new pg.Client(DATABASE_URL);
@@ -436,6 +464,19 @@ export class TestApiClient {
 
   /** Clean up all issues created during this test. */
   async cleanup() {
+    if (this.documentAgentFixtures.length) {
+      const db = new pg.Client(DATABASE_URL);
+      await db.connect();
+      try {
+        for (const { agentId, runtimeId, taskId } of this.documentAgentFixtures) {
+          await db.query("DELETE FROM task_token WHERE task_id = $1", [taskId]);
+          await db.query("DELETE FROM agent_task_queue WHERE id = $1", [taskId]);
+          await db.query("DELETE FROM agent WHERE id = $1", [agentId]);
+          await db.query("DELETE FROM agent_runtime WHERE id = $1", [runtimeId]);
+        }
+      } finally { await db.end(); }
+      this.documentAgentFixtures = [];
+    }
     if (this.seededIssueIds.length > 0 && this.workspaceId) {
       const client = new pg.Client(DATABASE_URL);
       await client.connect();

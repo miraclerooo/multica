@@ -465,6 +465,9 @@ func writeProjectContext(b *strings.Builder, ctx TaskContextForEnv) {
 	if ctx.ProjectTitle != "" {
 		fmt.Fprintf(b, "The active project for this task is **%s**.\n\n", ctx.ProjectTitle)
 	}
+	if ctx.ProjectID != "" {
+		fmt.Fprintf(b, "Project ID: `%s`. Discover its current documents with `multica project document list %s`; read with `multica project document get %s <document-id>`. Save revisions with `multica project document update %s <document-id> --base-version <version> --title <title> --body-file <path>`. A 409 means another author saved first: read the latest version and compare before submitting again.\n\n", ctx.ProjectID, ctx.ProjectID, ctx.ProjectID, ctx.ProjectID)
+	}
 	if desc := strings.TrimSpace(ctx.ProjectDescription); desc != "" {
 		b.WriteString("Project description — durable context the project owner set for work in this project:\n\n")
 		b.WriteString(desc)
@@ -473,7 +476,7 @@ func writeProjectContext(b *strings.Builder, ctx TaskContextForEnv) {
 	if len(ctx.ProjectResources) > 0 {
 		b.WriteString("Project resources (also written to `.multica/project/resources.json`):\n\n")
 		for _, r := range ctx.ProjectResources {
-			fmt.Fprintf(b, "- %s\n", formatProjectResource(r))
+			fmt.Fprintf(b, "- %s\n", formatProjectResource(r, ctx.ProjectID))
 		}
 		b.WriteString("\nResources are pointers — open them only when relevant to the task. ")
 		b.WriteString("For `github_repo` resources, use `multica repo checkout <url>` to fetch the code. ")

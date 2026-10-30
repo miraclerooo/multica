@@ -50,6 +50,9 @@ RETURNING *;
 -- name: DeleteProjectResource :exec
 DELETE FROM project_resource WHERE id = $1;
 
+-- name: DeleteProjectResourcesByProject :exec
+DELETE FROM project_resource WHERE project_id = $1 AND workspace_id = $2;
+
 -- name: CountProjectResources :one
 SELECT count(*) FROM project_resource WHERE project_id = $1;
 

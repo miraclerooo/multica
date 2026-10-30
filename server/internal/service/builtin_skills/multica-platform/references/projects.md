@@ -6,6 +6,7 @@ display metadata; it is context later injected into task briefs and
 
 - [Core model](#core-model)
 - [CLI](#cli)
+- [Project documents](#project-documents)
 - [local_directory execution modes](#local_directory-execution-modes)
 - [Referring to a project in a comment](#referring-to-a-project-in-a-comment)
 - [When to add a resource](#when-to-add-a-resource)
@@ -35,6 +36,7 @@ project-wide rules/context that should apply to every task in the project.
 
 Common resource types:
 
+- `project_document` — a project-owned Markdown document, with `resource_ref.document_id`; created and maintained through the document API, and resolved to the latest saved revision;
 - `github_repo` — durable GitHub repo context, with `resource_ref.url`, optional
   checkout `ref`, and optional prompt-only `default_branch_hint`;
 - `local_directory` — daemon-local path context, with `resource_ref.local_path`,
@@ -72,6 +74,22 @@ shortcuts. `project resource update` merges shortcut edits with the existing
 `--start-date` / `--due-date` are optional calendar days (`YYYY-MM-DD`, like
 issue dates). On `project update`, pass an empty string (`--start-date ""`) to
 clear a date; an unset flag leaves it untouched.
+
+## Project documents
+
+`project_document` resources are managed by the document API. They cannot be edited or detached using generic resource commands. Read the latest saved title, Markdown body, author and version before making changes:
+
+```bash
+multica project document list <project-id> --output json
+multica project document get <project-id> <document-id-or-uri> --output json
+multica project document create <project-id> --kind spec --title "Feature Spec"
+multica project document update <project-id> <document-id> --base-version <version> --title "Feature Spec" --body-file ./spec.md
+multica project document history <project-id> <document-id>
+```
+
+A document URI is `multica://project/<project-id>/documents/<document-id>`; `get` resolves it, including a `#REQ-...` fragment. `--output markdown` reads the title and body as Markdown. The resource's `/api/projects/{id}/resources/{resourceId}/content` endpoint resolves to the same latest saved snapshot.
+
+`update` requires the version you actually read. A 409 leaves the remote revision intact: read and compare the latest title and body, then deliberately submit against that version. Never retry by blindly increasing `--base-version`. Revisions are immutable, authors come from authenticated credentials, and browser-only drafts are not shared with runs.
 
 ## local_directory execution modes
 

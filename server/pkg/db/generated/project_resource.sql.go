@@ -74,6 +74,20 @@ func (q *Queries) DeleteProjectResource(ctx context.Context, id pgtype.UUID) err
 	return err
 }
 
+const deleteProjectResourcesByProject = `-- name: DeleteProjectResourcesByProject :exec
+DELETE FROM project_resource WHERE project_id = $1 AND workspace_id = $2
+`
+
+type DeleteProjectResourcesByProjectParams struct {
+	ProjectID   pgtype.UUID `json:"project_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) DeleteProjectResourcesByProject(ctx context.Context, arg DeleteProjectResourcesByProjectParams) error {
+	_, err := q.db.Exec(ctx, deleteProjectResourcesByProject, arg.ProjectID, arg.WorkspaceID)
+	return err
+}
+
 const getProjectResource = `-- name: GetProjectResource :one
 SELECT id, project_id, workspace_id, resource_type, resource_ref, label, position, created_at, created_by FROM project_resource
 WHERE id = $1
