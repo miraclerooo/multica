@@ -10,6 +10,7 @@ interface ConfigState {
   // storage URL on that domain as a loadable media source (MUL-3254).
   cdnSigned: boolean;
   allowSignup: boolean;
+  passwordLogin: boolean;
   googleClientId: string;
   daemonServerUrl: string;
   daemonAppUrl: string;
@@ -51,6 +52,7 @@ interface ConfigState {
   setAttachmentPublicUrl: (url?: string) => void;
   setAuthConfig: (config: {
     allowSignup: boolean;
+    passwordLogin?: boolean;
     googleClientId?: string;
     workspaceCreationDisabled?: boolean;
     vcsIntegrationAvailable?: boolean;
@@ -74,6 +76,7 @@ export const configStore = createStore<ConfigState>((set) => ({
   attachmentPublicUrl: "",
   cdnSigned: false,
   allowSignup: true,
+  passwordLogin: false,
   googleClientId: "",
   daemonServerUrl: "",
   daemonAppUrl: "",
@@ -92,9 +95,10 @@ export const configStore = createStore<ConfigState>((set) => ({
   setAuthConfig: ({
     allowSignup,
     googleClientId = "",
+    passwordLogin = false,
     workspaceCreationDisabled = false,
     vcsIntegrationAvailable = false,
-  }) => set({ allowSignup, googleClientId, workspaceCreationDisabled, vcsIntegrationAvailable }),
+  }) => set({ allowSignup, passwordLogin, googleClientId, workspaceCreationDisabled, vcsIntegrationAvailable }),
   setDaemonConfig: ({
     daemonServerUrl = "",
     daemonAppUrl = "",

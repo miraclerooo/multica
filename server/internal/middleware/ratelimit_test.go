@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 var okHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -241,5 +243,17 @@ func TestParseTrustedProxies_InvalidSkipped(t *testing.T) {
 	nets := ParseTrustedProxies("10.0.0.0/8, not-a-cidr, 172.16.0.0/12")
 	if len(nets) != 2 {
 		t.Fatalf("expected 2 valid CIDRs (invalid skipped), got %d", len(nets))
+	}
+}
+
+func TestStrictRateLimitUnavailable(t *testing.T) {
+	closed := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", MaxRetries: -1})
+	closed.Close()
+	for _, rdb := range []redis.UniversalClient{nil, closed} {
+		rec := httptest.NewRecorder()
+		StrictRateLimit(rdb, 5, time.Minute, nil)(okHandler).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/auth/password", nil))
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("got %d, want 503", rec.Code)
+		}
 	}
 }
