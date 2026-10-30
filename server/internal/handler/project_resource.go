@@ -67,7 +67,8 @@ type UpdateProjectResourceRequest struct {
 	Position    *int32          `json:"position"`
 }
 
-// validateAndNormalizeResourceRef checks the payload for a known resource_type.
+// validateAndNormalizeResourceRef checks resources attachable through the generic API.
+// Project documents attach their resources atomically through the document API.
 // New types are added here without schema migration; unknown types are rejected
 // at the API boundary so a typo can't slip through and produce a resource the
 // daemon/UI doesn't understand.
@@ -676,6 +677,10 @@ func (h *Handler) UpdateProjectResource(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "project resource not found")
 		return
 	}
+	if existing.ResourceType == "project_document" {
+		writeError(w, http.StatusBadRequest, "document resources are managed by the project document API")
+		return
+	}
 
 	// Decode into a raw map first so we can tell "field omitted" from
 	// "field present with zero value" — the label clear case in particular
@@ -914,6 +919,10 @@ func (h *Handler) DeleteProjectResource(w http.ResponseWriter, r *http.Request) 
 	}
 	if uuidToString(resource.ProjectID) != uuidToString(project.ID) {
 		writeError(w, http.StatusNotFound, "project resource not found")
+		return
+	}
+	if resource.ResourceType == "project_document" {
+		writeError(w, http.StatusBadRequest, "document resources are managed by the project document API")
 		return
 	}
 	if err := h.Queries.DeleteProjectResource(r.Context(), resource.ID); err != nil {

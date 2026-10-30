@@ -119,10 +119,16 @@ func sanitizeEmailForBrief(email string) string {
 // formatProjectResource renders a single resource as a human-readable bullet.
 // Unknown resource types fall back to a JSON-encoded ref so the agent can
 // still read what the user attached. New resource types should add a case
-// here AND in the API validator (handler/project_resource.go).
-func formatProjectResource(r ProjectResourceForEnv) string {
+// here and in their creation API (generic resources or managed documents).
+func formatProjectResource(r ProjectResourceForEnv, projectID string) string {
 	label := r.Label
 	switch r.ResourceType {
+	case "project_document":
+		var ref struct {
+			DocumentID string `json:"document_id"`
+		}
+		_ = json.Unmarshal(r.ResourceRef, &ref)
+		return fmt.Sprintf("**Project document**: %s — `multica://project/%s/documents/%s`; read the latest saved revision with `multica project document get %s %s`", label, projectID, ref.DocumentID, projectID, ref.DocumentID)
 	case "github_repo":
 		var payload struct {
 			URL               string `json:"url"`

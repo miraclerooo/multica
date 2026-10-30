@@ -677,6 +677,18 @@ func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to delete project views")
 		return
 	}
+	if err := qtx.DeleteProjectDocumentRevisionsByProject(r.Context(), db.DeleteProjectDocumentRevisionsByProjectParams{WorkspaceID: project.WorkspaceID, ProjectID: project.ID}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete document revisions")
+		return
+	}
+	if err := qtx.DeleteProjectDocumentsByProject(r.Context(), db.DeleteProjectDocumentsByProjectParams{WorkspaceID: project.WorkspaceID, ProjectID: project.ID}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete documents")
+		return
+	}
+	if err := qtx.DeleteProjectResourcesByProject(r.Context(), db.DeleteProjectResourcesByProjectParams{ProjectID: project.ID, WorkspaceID: project.WorkspaceID}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete project resources")
+		return
+	}
 	if err := qtx.DeleteProject(r.Context(), db.DeleteProjectParams{
 		ID:          project.ID,
 		WorkspaceID: project.WorkspaceID,
