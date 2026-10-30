@@ -1565,6 +1565,9 @@ func (h *Handler) DaemonHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if ack.PendingLocalSkills != nil {
 		resp["pending_local_skills"] = ack.PendingLocalSkills
 	}
+	if ack.PendingDirectoryBrowse != nil {
+		resp["pending_directory_browse"] = ack.PendingDirectoryBrowse
+	}
 	if ack.PendingLocalSkillImport != nil {
 		resp["pending_local_skill_import"] = ack.PendingLocalSkillImport
 	}
@@ -1829,6 +1832,20 @@ func (h *Handler) processHeartbeat(ctx context.Context, runtimeID string, suppor
 	}
 
 	probeImportStart := time.Now()
+	if h.DirectoryBrowseStore != nil {
+		probeCtx, cancel := context.WithTimeout(ctx, heartbeatHasPendingTimeout)
+		hasDirectories, err := h.DirectoryBrowseStore.HasPending(probeCtx, runtimeID)
+		cancel()
+		if err == nil && hasDirectories {
+			request, err := h.DirectoryBrowseStore.PopPending(ctx, runtimeID)
+			if err != nil {
+				slog.Warn("directory request claim failed", "runtime_id", runtimeID, "error", err)
+			} else if request != nil {
+				ack.PendingDirectoryBrowse = &protocol.PendingDirectoryBrowse{ID: request.ID, DirectoryBrowseInput: request.Input}
+			}
+		}
+	}
+
 	probeImportCtx, cancelProbeImport := context.WithTimeout(ctx, heartbeatHasPendingTimeout)
 	hasImport, probeErr := h.LocalSkillImportStore.HasPending(probeImportCtx, runtimeID)
 	cancelProbeImport()

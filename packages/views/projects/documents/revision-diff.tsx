@@ -122,7 +122,7 @@ export function RevisionDiff({
                     aria-label={t(($) => $.documents.left_version)}
                     value={leftVersion}
                     onChange={(e) => setLeftVersion(Number(e.target.value))}
-                    className="rounded border bg-background px-1 py-0.5 text-caption"
+                    className="rounded-sm border bg-background px-1 py-0.5 text-caption"
                   >
                     {revisions.map((r) => (
                       <option key={r.version} value={r.version}>
@@ -147,7 +147,7 @@ export function RevisionDiff({
                 </p>
                 <p
                   className={cn(
-                    "text-title-sm font-semibold break-words rounded p-2",
+                    "text-title-sm font-semibold break-words rounded-sm p-2",
                     titleChanged && "document-diff-removed",
                   )}
                 >
@@ -166,7 +166,7 @@ export function RevisionDiff({
                     aria-label={t(($) => $.documents.right_version)}
                     value={rightVersion}
                     onChange={(e) => setRightVersion(Number(e.target.value))}
-                    className="rounded border bg-background px-1 py-0.5 text-caption"
+                    className="rounded-sm border bg-background px-1 py-0.5 text-caption"
                   >
                     {revisions.map((r) => (
                       <option key={r.version} value={r.version}>
@@ -189,7 +189,7 @@ export function RevisionDiff({
                 </p>
                 <p
                   className={cn(
-                    "text-title-sm font-semibold break-words rounded p-2",
+                    "text-title-sm font-semibold break-words rounded-sm p-2",
                     titleChanged && "document-diff-added",
                   )}
                 >

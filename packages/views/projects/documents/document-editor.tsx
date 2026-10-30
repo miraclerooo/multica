@@ -682,7 +682,7 @@ export function DocumentEditor({
                         `${paths.projectDetail(project.id)}?view=docs&document=${documentId}#${encodeURIComponent(req.id)}`,
                       );
                     }}
-                    className="rounded border border-brand/15 bg-brand/5 px-2 py-1 font-mono text-micro text-brand hover:bg-brand/10"
+                    className="rounded-sm border border-brand/15 bg-brand/5 px-2 py-1 font-mono text-micro text-brand hover:bg-brand/10"
                   >
                     {req.id}
                   </button>

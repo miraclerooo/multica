@@ -9,6 +9,7 @@ import {
   FolderOpen,
   GitBranch,
   Plus,
+  Pencil,
   Search,
   Trash2,
 } from "@multica/ui/icons";
@@ -22,8 +23,10 @@ import {
 import { splitGithubUrlRef } from "@multica/core/github";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
+import { agentListOptions } from "@multica/core/workspace/queries";
 import { AppLink } from "../../navigation";
 import type {
+  Agent,
   GithubRepoResourceRef,
   LocalDirectoryExecutionMode,
   LocalDirectoryResourceRef,
@@ -62,6 +65,9 @@ import {
 import { GithubRefDialog } from "./github-ref-dialog";
 import { GithubRefField, githubRefHasError } from "./github-ref-field";
 import { localDirectoryLabel } from "./local-directory-label";
+import { LocalDirectoryConfigDialog, MachineAgents } from "./local-directory-config-dialog";
+import { buildRuntimeMachines, type RuntimeMachine } from "../../runtimes/components/runtime-machines";
+import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogCancel } from "@multica/ui/components/ui/alert-dialog";
 import { useT } from "../../i18n";
 import { githubShortLabel } from "../../common/github-url";
 
@@ -122,6 +128,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
   const [repoSearch, setRepoSearch] = useState("");
   const [picking, setPicking] = useState(false);
   const [modeDialog, setModeDialog] = useState<ModeDialogState | null>(null);
+  const [localConfig, setLocalConfig] = useState<{ resource?: ProjectResource & { resource_ref: LocalDirectoryResourceRef } } | null>(null);
   const [modeSaving, setModeSaving] = useState(false);
   const [modeError, setModeError] = useState<string | null>(null);
   const [refDialog, setRefDialog] = useState<RefDialogState | null>(null);
@@ -134,10 +141,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
   const createResource = useCreateProjectResource(wsId, projectId);
   const updateResource = useUpdateProjectResource(wsId, projectId);
 
-  // Desktop-only entry points. We hide (not just disable) on web so users
-  // there don't see an action they can never complete — the spec calls for
-  // read-only on web because the daemon-id check can't be performed in the
-  // browser.
+  // Desktop keeps its native picker; web selects directories on the target daemon.
   const desktopMode = isDesktopShell();
   const localDaemonId = daemonStatus.daemonId;
 
@@ -147,6 +151,11 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
   // what told a user on the newest release to upgrade it (#7113). The save is
   // gated server-side and surfaced here as an inline error instead.
   const { data: runtimes = [] } = useQuery(runtimeListOptions(wsId));
+  const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const machines = buildRuntimeMachines(runtimes, { now: Date.now(), localDaemonId })
+    .filter((machine) => machine.daemonId && machine.mode !== "cloud");
+  const attachedDaemons = new Set(resources.filter(isLocalDirectoryRef).map((r) => r.resource_ref.daemon_id));
+  const availableMachine = machines.some((machine) => !attachedDaemons.has(machine.daemonId!));
   // The one thing the client must still check up front: whether this server
   // performs that gate at all. One declared boolean, no inference — servers
   // that predate it drop execution_mode and answer 201.
@@ -395,24 +404,14 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
                           ?.description
                       : undefined
                   }
-                  localDaemonId={localDaemonId}
+                  localMachine={isLocalDirectoryRef(resource) ? machines.find((machine) => machine.daemonId === resource.resource_ref.daemon_id) : undefined}
+                  agents={agents}
                   onEditGithubRef={(target) => {
                     setRefError(null);
                     setRefDialog({ resource: target });
                   }}
                   onEditLocalDirectoryMode={(target) => {
-                    setModeError(null);
-                    setModeDialog({
-                      path: target.resource_ref.local_path,
-                      daemonId: target.resource_ref.daemon_id,
-                      mode: executionModeOf(target.resource_ref),
-                      // The path is already saved, so there is nothing to
-                      // re-validate from the browser; the desktop check only
-                      // runs at pick time. Unknown means the option stays
-                      // available and the daemon has the final say.
-                      isGitRepo: undefined,
-                      resource: target,
-                    });
+                    setLocalConfig({ resource: target });
                   }}
                 />
               ))}
@@ -515,6 +514,15 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
               />
             </PopoverContent>
           </Popover>
+          {!desktopMode && (
+            <div className="flex flex-col">
+              <Button variant="ghost" size="sm" className="justify-start text-caption text-muted-foreground" disabled={!availableMachine} onClick={() => setLocalConfig({})}>
+                <FolderOpen className="size-3" />
+                {t(($) => $.resources.add_local_directory_button)}
+              </Button>
+              {!availableMachine && <p className="px-2 text-micro text-muted-foreground">{machines.length === 0 ? t(($) => $.directory_config.no_machines) : t(($) => $.directory_config.all_attached)}</p>}
+            </div>
+          )}
           {desktopMode && (
             <div className="flex flex-col">
               <Button
@@ -548,6 +556,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
           )}
         </div>
       )}
+      {localConfig && <LocalDirectoryConfigDialog projectId={projectId} resources={resources} machines={machines} agents={agents} localDaemonId={localDaemonId} resource={localConfig.resource} onClose={() => setLocalConfig(null)} />}
       {refDialog && (
         <GithubRefDialog
           open
@@ -619,7 +628,8 @@ function worktreeUnavailableReason(
 interface ResourceRowProps {
   resource: ProjectResource;
   githubRepoDescription?: string;
-  localDaemonId: string | null;
+  localMachine?: RuntimeMachine;
+  agents: Agent[];
   onEditGithubRef: (
     resource: ProjectResource & { resource_ref: GithubRepoResourceRef },
   ) => void;
@@ -638,7 +648,8 @@ function ProjectDocumentResourceLink({ resource }: { resource: ProjectResource }
 function ResourceRow({
   resource,
   githubRepoDescription,
-  localDaemonId,
+  localMachine,
+  agents,
   onEditGithubRef,
   onEditLocalDirectoryMode,
 }: ResourceRowProps) {
@@ -648,16 +659,18 @@ function ResourceRow({
     resource.project_id,
   );
   const onRemove = async () => {
-    if (deleteResource.isPending) return;
+    if (deleteResource.isPending) return false;
     try {
       await deleteResource.mutateAsync(resource.id);
       toast.success(t(($) => $.resources.toast_removed));
+      return true;
     } catch (err) {
       toast.error(
         err instanceof Error && err.message
           ? err.message
           : t(($) => $.resources.toast_remove_failed),
       );
+      return false;
     }
   };
 
@@ -759,7 +772,8 @@ function ResourceRow({
     return (
       <LocalDirectoryRow
         resource={resource}
-        localDaemonId={localDaemonId}
+        machine={localMachine}
+        agents={agents}
         onRemove={onRemove}
         removing={deleteResource.isPending}
         onEditMode={onEditLocalDirectoryMode}
@@ -794,109 +808,51 @@ function ResourceRow({
 
 interface LocalDirectoryRowProps {
   resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef };
-  localDaemonId: string | null;
-  onRemove: () => void;
+  machine?: RuntimeMachine;
+  agents: Agent[];
+  onRemove: () => Promise<boolean>;
   removing: boolean;
   onEditMode: (
     resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
   ) => void;
 }
 
-function LocalDirectoryRow({
-  resource,
-  localDaemonId,
-  onRemove,
-  removing,
-  onEditMode,
-}: LocalDirectoryRowProps) {
+function LocalDirectoryRow({ resource, machine, agents, onRemove, removing, onEditMode }: LocalDirectoryRowProps) {
   const { t } = useT("projects");
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const ref = resource.resource_ref;
   const mode = executionModeOf(ref);
-  const display = localDirectoryLabel(resource);
-  const isForeignDaemon =
-    localDaemonId !== null && ref.daemon_id !== localDaemonId;
-  const isLocalUnknown = localDaemonId === null;
-  // "disabled" in the spec sense — visual de-emphasis + no chat hint. Both
-  // actions stay available so the user can drop or reconfigure a stale
-  // registration from any device.
-  const mismatch = isForeignDaemon || isLocalUnknown;
-
   return (
-    <div
-      className={`flex items-center gap-2 text-caption group ${
-        mismatch ? "opacity-60" : ""
-      }`}
-    >
-      <FolderOpen className="size-3.5 text-muted-foreground shrink-0" />
-      {/* The name is the folder's own (or whatever a label update stored);
-          there is deliberately no rename here. A folder is identified by its
-          path, and a pencil that only retitled the row read as a broken edit
-          action beside the branch and remove controls (MUL-7525). */}
-      <Tooltip>
-        <TooltipTrigger
-          render={<span className="truncate flex-1">{display}</span>}
-        />
-        <TooltipContent side="top">
-          <div className="space-y-0.5 text-micro">
-            <div className="font-mono">{ref.local_path}</div>
-            {mismatch && (
-              <div className="text-muted-foreground">
-                {isLocalUnknown
-                  ? t(($) => $.resources.local_no_daemon_tooltip)
-                  : t(($) => $.resources.local_other_machine_tooltip)}
-              </div>
-            )}
-          </div>
-        </TooltipContent>
-      </Tooltip>
-      {/* Always visible, unlike the hover-only actions: without it there is no
-          way to tell whether tasks on this folder edit it directly or hand back
-          a branch, which is the first thing someone asks when a task queues (or
-          does not). */}
-      {mode === "worktree" && (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Badge variant="secondary" className="shrink-0 gap-1 font-normal">
-                <GitBranch className="size-3" />
-                {t(($) => $.resources.mode_badge_worktree)}
-              </Badge>
-            }
-          />
-          <TooltipContent side="top">
-            {t(($) => $.resources.mode_badge_worktree_tooltip)}
-          </TooltipContent>
-        </Tooltip>
-      )}
-      {/* Not gated on `mismatch`: switching the mode only rewrites a field, so
-          it works from the web app or another device, unlike the folder
-          picker. */}
-      <TooltipHint label={t(($) => $.resources.mode_edit_tooltip)}>
-        <button
-          type="button"
-          onClick={() => onEditMode(resource)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity rounded-sm p-0.5 hover:bg-accent"
-          aria-label={t(($) => $.resources.mode_edit_tooltip)}
-        >
-          <GitBranch className="size-3 text-muted-foreground" />
-        </button>
-      </TooltipHint>
-      <TooltipHint label={t(($) => $.resources.remove_tooltip)}>
-        <button
-          type="button"
-          onClick={onRemove}
-          disabled={removing}
-          aria-busy={removing}
-          className="opacity-0 group-hover:opacity-100 disabled:opacity-100 transition-opacity rounded-sm p-0.5 hover:bg-accent"
-          aria-label={t(($) => $.resources.remove_tooltip)}
-        >
-          {removing ? (
-            <Spinner className="size-3" aria-hidden="true" />
-          ) : (
-            <Trash2 className="size-3 text-muted-foreground" />
-          )}
-        </button>
-      </TooltipHint>
+    <div className="space-y-1 rounded-md border p-2 text-caption group">
+      <div className="flex items-center gap-2">
+        <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate">{localDirectoryLabel(resource)}</span>
+        <Badge variant="secondary" className="gap-1">{mode === "worktree" ? <><GitBranch className="size-3" />{t(($) => $.resources.mode_badge_worktree)}</> : t(($) => $.directory_config.in_place)}</Badge>
+        <Button variant="ghost" size="icon-xs" aria-label={t(($) => $.directory_config.edit_title)} onClick={() => onEditMode(resource)}><Pencil className="size-3" /></Button>
+        <Button variant="ghost" size="icon-xs" aria-label={t(($) => $.resources.remove_tooltip)} disabled={removing} onClick={() => setConfirmRemove(true)}><Trash2 className="size-3" /></Button>
+      </div>
+      <div className="flex items-center gap-1 text-micro text-muted-foreground">
+        <span className="truncate">{machine?.title ?? t(($) => $.directory_config.unknown_machine)}</span>
+        {machine && machine.health !== "online" && <Badge variant="outline">{t(($) => $.directory_config.offline)}</Badge>}
+      </div>
+      <p className="truncate font-mono text-micro text-muted-foreground" title={ref.local_path}>{ref.local_path}</p>
+      <MachineAgents machine={machine} agents={agents} />
+      <AlertDialog open={confirmRemove} onOpenChange={(open) => { if (!removing) setConfirmRemove(open); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t(($) => $.directory_config.unlink_title)}</AlertDialogTitle>
+            <AlertDialogDescription>{t(($) => $.directory_config.unlink_description)}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <p className="text-caption">{machine?.title ?? t(($) => $.directory_config.unknown_machine)}</p>
+          <p className="break-all font-mono text-caption">{ref.local_path}</p>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removing}>{t(($) => $.resources.mode_cancel)}</AlertDialogCancel>
+            <Button variant="destructive" disabled={removing} aria-busy={removing} onClick={async () => { if (await onRemove()) setConfirmRemove(false); }}>
+              {removing && <Spinner className="size-4" />}{t(($) => $.resources.remove_tooltip)}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

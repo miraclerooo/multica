@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi } from "vitest";
+import type { AnchorHTMLAttributes } from "react";
 import { screen } from "@testing-library/react";
 import { renderWithI18n } from "../../test/i18n";
 import en from "../../locales/en/projects.json";
@@ -24,10 +25,18 @@ const RESOURCE = {
   created_by: "u1",
 };
 
+const DOCUMENT_RESOURCE = {
+  ...RESOURCE,
+  id: "res-doc",
+  resource_type: "project_document",
+  resource_ref: { document_id: "doc-1", kind: "spec" },
+  label: "Project specification",
+};
+
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryKey?: unknown[] }) => {
     const key = options?.queryKey?.[0];
-    if (key === "project-resources") return { data: [RESOURCE] };
+    if (key === "project-resources") return { data: [RESOURCE, DOCUMENT_RESOURCE] };
     return { data: [] };
   },
   queryOptions: (options: unknown) => options,
@@ -52,6 +61,10 @@ vi.mock("@multica/core/runtimes", () => ({
 vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
 vi.mock("@multica/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "workspace-1", slug: "ws", repos: [] }),
+  useWorkspacePaths: () => ({ projectDetail: (id: string) => `/ws/projects/${id}` }),
+}));
+vi.mock("../../navigation", () => ({
+  AppLink: (props: AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props} />,
 }));
 vi.mock("../../platform/local-directory", () => ({
   isDesktopShell: () => true,
@@ -68,6 +81,15 @@ import { ProjectResourcesSection } from "./project-resources-section";
 const strings = en.resources;
 
 describe("ProjectResourcesSection — local directory row", () => {
+  it("keeps the document link alongside directory controls without offering to unlink managed documents", () => {
+    renderWithI18n(<ProjectResourcesSection projectId="p1" />);
+    expect(screen.getByRole("link", { name: "Project specification" })).toHaveAttribute(
+      "href", "/ws/projects/p1?view=docs&document=doc-1",
+    );
+    expect(screen.getByRole("button", { name: en.directory_config.edit_title })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: strings.remove_tooltip })).toHaveLength(1);
+  });
+
   // The read-order matrix lives in local-directory-label.test.ts; this pins
   // the row to that helper so a label set through the API is what people see.
   it("names the row from the top-level label, not the copy inside the ref", () => {
@@ -76,14 +98,10 @@ describe("ProjectResourcesSection — local directory row", () => {
     expect(screen.queryByText("game-client")).not.toBeInTheDocument();
   });
 
-  // The row used to carry a pencil that turned the name into a text box. A
-  // folder is identified by its path, so the only thing that "edit" changed
-  // was the row's title, and beside the branch and remove controls it read as
-  // a broken edit action (MUL-7525). What remains are the two settings that
-  // change how tasks run on the folder.
-  it("offers the execution mode and remove actions, and no rename", () => {
+  // Editing changes the actual path and mode rather than only the row label.
+  it("offers path/mode editing and remove actions, and no rename", () => {
     renderWithI18n(<ProjectResourcesSection projectId="p1" />);
-    expect(screen.getByRole("button", { name: strings.mode_edit_tooltip })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: en.directory_config.edit_title })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: strings.remove_tooltip })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /rename/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();

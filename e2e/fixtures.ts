@@ -390,20 +390,44 @@ export class TestApiClient {
   }
 
   /** Seed an owned runtime without launching an actual agent tool. */
-  async seedRuntime(name: string): Promise<string> {
+  async seedRuntime(name: string, options: { daemonId?: string; capabilities?: string[] } = {}): Promise<string> {
     if (!this.workspaceId || !this.email) throw new Error("Select a workspace before seeding a runtime");
     const client = new pg.Client(DATABASE_URL);
     await client.connect();
     try {
       const result = await client.query(
-        `INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, status, owner_id, last_seen_at)
-         SELECT $1, $2, 'local', 'claude', 'online', id, now() FROM "user" WHERE email = $3 RETURNING id`,
-        [this.workspaceId, name, this.email],
+        `INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, status, owner_id, last_seen_at, daemon_id, metadata)
+         SELECT $1, $2, 'local', 'claude', 'online', id, now(), $4, $5::jsonb FROM "user" WHERE email = $3 RETURNING id`,
+        [this.workspaceId, name, this.email, options.daemonId ?? null, JSON.stringify({ capabilities: options.capabilities ?? [] })],
       );
       return result.rows[0].id as string;
     } finally {
       await client.end();
     }
+  }
+
+  async createTestAgent(name: string, runtimeId: string) {
+    const res = await this.authedFetch("/api/agents", {
+      method: "POST",
+      body: JSON.stringify({ name, runtime_id: runtimeId, runtime_mode: "local", runtime_config: {} }),
+    });
+    if (!res.ok) throw new Error(`create agent failed: ${res.status} ${await res.text()}`);
+    return res.json();
+  }
+
+  /** Simulate only filesystem work; exercise the actual request/heartbeat/result APIs. */
+  async completeDirectoryBrowse(runtimeId: string, requestId: string, result: Record<string, unknown>) {
+    const heartbeat = await this.authedFetch("/api/daemon/heartbeat", {
+      method: "POST",
+      body: JSON.stringify({ runtime_id: runtimeId }),
+    });
+    if (!heartbeat.ok) throw new Error(`heartbeat failed: ${heartbeat.status} ${await heartbeat.text()}`);
+    const pending = await heartbeat.json();
+    if (pending.pending_directory_browse?.id !== requestId) throw new Error("Directory request was not claimed by the target runtime");
+    const report = await this.authedFetch(`/api/daemon/runtimes/${runtimeId}/directories/${requestId}/result`, {
+      method: "POST", body: JSON.stringify({ result }),
+    });
+    if (!report.ok) throw new Error(`directory report failed: ${report.status} ${await report.text()}`);
   }
 
   /** Adds an existing user to this client's workspace and returns the member id. */

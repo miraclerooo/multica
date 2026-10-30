@@ -1,4 +1,5 @@
 import type { ZodType } from "zod";
+import { DirectoryBrowseRequestSchema, MALFORMED_DIRECTORY_REQUEST, type DirectoryBrowseInput, type DirectoryBrowseRequest } from "../runtimes/directories-schema";
 import { DocumentListSchema, DocumentHistorySchema, ProjectResourceListSchema, parseDocumentResponse, type ProjectDocument, type CreateDocumentInput, type SaveDocumentInput } from "../documents/schema";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
@@ -2774,6 +2775,18 @@ export class ApiClient {
     return this.fetch(`/api/runtimes/${runtimeId}/local-skills`, {
       method: "POST",
     });
+  }
+
+  async initiateDirectoryBrowse(runtimeId: string, input: DirectoryBrowseInput, signal?: AbortSignal): Promise<DirectoryBrowseRequest> {
+    const data = await this.fetch<unknown>(`/api/runtimes/${runtimeId}/directories`, {
+      method: "POST", body: JSON.stringify(input), signal,
+    });
+    return parseWithFallback(data, DirectoryBrowseRequestSchema, MALFORMED_DIRECTORY_REQUEST, { endpoint: "POST /api/runtimes/{id}/directories" });
+  }
+
+  async getDirectoryBrowse(runtimeId: string, requestId: string, signal?: AbortSignal): Promise<DirectoryBrowseRequest> {
+    const data = await this.fetch<unknown>(`/api/runtimes/${runtimeId}/directories/${requestId}`, { signal });
+    return parseWithFallback(data, DirectoryBrowseRequestSchema, MALFORMED_DIRECTORY_REQUEST, { endpoint: "GET /api/runtimes/{id}/directories/{requestId}" });
   }
 
   async getListLocalSkillsResult(
