@@ -1,5 +1,6 @@
 import type { ZodType } from "zod";
 import { DirectoryBrowseRequestSchema, MALFORMED_DIRECTORY_REQUEST, type DirectoryBrowseInput, type DirectoryBrowseRequest } from "../runtimes/directories-schema";
+import { DocumentListSchema, DocumentHistorySchema, ProjectResourceListSchema, parseDocumentResponse, type ProjectDocument, type CreateDocumentInput, type SaveDocumentInput } from "../documents/schema";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -4135,11 +4136,38 @@ export class ApiClient {
     await this.fetch(`/api/projects/${id}`, { method: "DELETE" });
   }
 
+  async listProjectDocuments(projectId: string) {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/documents`);
+    return parseWithFallback(raw, DocumentListSchema, { documents: [] as ProjectDocument[], total: 0 }, { endpoint: "GET project documents" });
+  }
+
+  async getProjectDocument(projectId: string, id: string) {
+    return parseDocumentResponse(await this.fetch<unknown>(`/api/projects/${projectId}/documents/${id}`), "GET project document");
+  }
+
+  async createProjectDocument(projectId: string, data: CreateDocumentInput) {
+    return parseDocumentResponse(await this.fetch<unknown>(`/api/projects/${projectId}/documents`, { method: "POST", body: JSON.stringify(data) }), "POST project document");
+  }
+
+  async saveProjectDocument(projectId: string, id: string, data: SaveDocumentInput) {
+    return parseDocumentResponse(await this.fetch<unknown>(`/api/projects/${projectId}/documents/${id}`, { method: "PUT", body: JSON.stringify(data) }), "PUT project document");
+  }
+
+  async listProjectDocumentRevisions(projectId: string, id: string) {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/documents/${id}/revisions`);
+    return parseWithFallback(raw, DocumentHistorySchema, { revisions: [] as ProjectDocument[], total: 0 }, { endpoint: "GET project document revisions" });
+  }
+
+  async getProjectResourceContent(projectId: string, resourceId: string) {
+    return parseDocumentResponse(await this.fetch<unknown>(`/api/projects/${projectId}/resources/${resourceId}/content`), "GET project resource content");
+  }
+
   // Project resources
   async listProjectResources(
     projectId: string,
   ): Promise<ListProjectResourcesResponse> {
-    return this.fetch(`/api/projects/${projectId}/resources`);
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/resources`);
+    return parseWithFallback(raw, ProjectResourceListSchema, { resources: [], total: 0 }, { endpoint: "GET project resources" });
   }
 
   async createProjectResource(

@@ -43,6 +43,25 @@ import { ProjectDemo } from "@/components/demos/project-demo";
 
 エージェントがプロジェクト内のタスクを実行するとき、プロジェクトの名前と説明がその実行のコンテキストに追加されます。目標、技術的な境界、成果物の取り決めなど、関連するすべての実行が知っておくべき情報は説明に書き、1 件のタスクにだけ関係する要件はそのタスクに書きます。
 
+## Spec とドキュメント
+
+Web またはデスクトップのプロジェクトで **Spec とドキュメント** を開きます。仕様書、ガイド、メモを分類し、タイトル、REQ 番号、本文を検索できます。新しい仕様書には背景と目標、要件、WHEN/THEN シナリオ、受け入れ確認のテンプレートが入ります。
+
+**閲覧・直接編集**、**分割表示**、**ソース**は同じ Markdown を編集します。直接編集でチェックした受け入れ項目は Markdown に反映されます。**リビジョンを保存**または Cmd/Ctrl+S で新しいバージョンを保存します。未保存の下書きは同じデバイスで画面を切り替えたり再読み込みしたりしても保持されます。破棄には確認が必要です。
+
+右側には最近の編集者、プロジェクトリソース参照、リビジョン履歴が表示されます。比較には双方のタイトルと本文が含まれます。競合時は下書きを保持するか、コピーとして保存するか、比較したバージョンを基に新しいリビジョンを保存します。その後リモートが更新されていれば保存は拒否されます。
+
+プロジェクトの実行は最新の保存済みリビジョンを読み取れます。
+
+```bash
+multica project document list <project-id> --output json
+multica project document get <project-id> <document-id-or-uri> --output markdown
+multica project document update <project-id> <document-id> --base-version 2 --title "Feature Spec" --body-file ./spec.md
+multica project document history <project-id> <document-id>
+```
+
+`--base-version` には実際に読んだバージョンを指定します。409 が返されたら最新の内容を比較してから再送します。`multica://project/<project-id>/documents/<document-id>` 参照は `project document get` で解決できます。未保存のブラウザー下書きは実行には共有されません。
+
 ## リソースの追加
 
 プロジェクトリソースは、どのコードとどの作業ディレクトリを使うかをエージェントに伝えます。

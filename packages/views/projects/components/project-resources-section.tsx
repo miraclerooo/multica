@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ChevronRight,
   FolderGit,
+  FileText,
   FolderOpen,
   GitBranch,
   Plus,
@@ -21,8 +22,9 @@ import {
 } from "@multica/core/projects";
 import { splitGithubUrlRef } from "@multica/core/github";
 import { useWorkspaceId } from "@multica/core/hooks";
-import { useCurrentWorkspace } from "@multica/core/paths";
+import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
 import { agentListOptions } from "@multica/core/workspace/queries";
+import { AppLink } from "../../navigation";
 import type {
   Agent,
   GithubRepoResourceRef,
@@ -636,6 +638,13 @@ interface ResourceRowProps {
   ) => void;
 }
 
+function ProjectDocumentResourceLink({ resource }: { resource: ProjectResource }) {
+  const { t } = useT("projects");
+  const paths = useWorkspacePaths();
+  if (!("document_id" in resource.resource_ref) || typeof resource.resource_ref.document_id !== "string") return null;
+  return <AppLink href={`${paths.projectDetail(resource.project_id)}?view=docs&document=${encodeURIComponent(resource.resource_ref.document_id)}`} className="flex min-w-0 items-center gap-2 rounded-md p-1 text-caption hover:bg-accent"><FileText className="size-3.5 shrink-0 text-brand" /><span className="truncate">{resource.label || t(($) => $.documents.document)}</span></AppLink>;
+}
+
 function ResourceRow({
   resource,
   githubRepoDescription,
@@ -664,6 +673,8 @@ function ResourceRow({
       return false;
     }
   };
+
+  if (resource.resource_type === "project_document") return <ProjectDocumentResourceLink resource={resource} />;
 
   if (isGithubRef(resource)) {
     const ref = resource.resource_ref;

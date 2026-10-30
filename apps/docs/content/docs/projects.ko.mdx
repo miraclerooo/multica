@@ -43,6 +43,25 @@ import { ProjectDemo } from "@/components/demos/project-demo";
 
 에이전트가 프로젝트 안의 태스크를 실행할 때 프로젝트 이름과 설명이 해당 실행의 컨텍스트에 포함됩니다. 목표, 기술적 경계, 납품 규칙처럼 관련된 모든 실행이 알아야 할 정보는 설명에 적고, 하나의 태스크에만 관련된 요구 사항은 그 태스크에 적습니다.
 
+## Spec 및 문서
+
+웹 또는 데스크톱 프로젝트에서 **Spec 및 문서**를 엽니다. 핵심 사양과 가이드·메모를 분류하고 제목, REQ 번호, 본문을 검색할 수 있습니다. 새 사양에는 배경과 목표, 요구 사항, WHEN/THEN 시나리오, 수락 기준 템플릿이 포함됩니다.
+
+**읽기 / 직접 편집**, **분할 보기**, **소스**는 같은 Markdown을 편집합니다. 직접 편집에서 수락 항목을 체크하면 Markdown에 반영됩니다. **리비전 저장** 또는 Cmd/Ctrl+S로 새 버전을 저장합니다. 저장하지 않은 초안은 같은 기기에서 문서를 전환하거나 새로 고쳐도 유지됩니다. 버리려면 확인해야 합니다.
+
+오른쪽 패널에는 최근 편집자, 프로젝트 리소스 참조, 리비전 기록이 표시됩니다. 비교에는 양쪽 제목과 본문이 포함됩니다. 충돌 시 초안을 유지하거나 사본으로 저장하거나 비교한 버전을 기준으로 새 리비전을 저장합니다. 그 사이 원격 내용이 바뀌었다면 저장이 거부됩니다.
+
+프로젝트 실행은 최신 저장된 리비전을 읽을 수 있습니다.
+
+```bash
+multica project document list <project-id> --output json
+multica project document get <project-id> <document-id-or-uri> --output markdown
+multica project document update <project-id> <document-id> --base-version 2 --title "Feature Spec" --body-file ./spec.md
+multica project document history <project-id> <document-id>
+```
+
+`--base-version`에는 실제로 읽은 버전을 지정합니다. 409 응답을 받으면 최신 내용을 비교한 후 다시 제출하세요. `multica://project/<project-id>/documents/<document-id>` 참조는 `project document get`으로 읽을 수 있습니다. 저장하지 않은 브라우저 초안은 실행에 공유되지 않습니다.
+
 ## 리소스 추가
 
 프로젝트 리소스는 에이전트가 사용할 코드와 작업 디렉터리를 지정합니다.

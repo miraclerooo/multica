@@ -1372,6 +1372,36 @@ type Project struct {
 	WorkflowID  pgtype.UUID        `json:"workflow_id"`
 }
 
+type ProjectDocument struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+	Kind        string             `json:"kind"`
+	Title       string             `json:"title"`
+	Body        string             `json:"body"`
+	Version     int32              `json:"version"`
+	AuthorType  string             `json:"author_type"`
+	AuthorID    pgtype.UUID        `json:"author_id"`
+	AuthorName  string             `json:"author_name"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ProjectDocumentRevision struct {
+	ID          pgtype.UUID        `json:"id"`
+	DocumentID  pgtype.UUID        `json:"document_id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+	Title       string             `json:"title"`
+	Body        string             `json:"body"`
+	Version     int32              `json:"version"`
+	BaseVersion int32              `json:"base_version"`
+	AuthorType  string             `json:"author_type"`
+	AuthorID    pgtype.UUID        `json:"author_id"`
+	AuthorName  string             `json:"author_name"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type ProjectResource struct {
 	ID           pgtype.UUID        `json:"id"`
 	ProjectID    pgtype.UUID        `json:"project_id"`

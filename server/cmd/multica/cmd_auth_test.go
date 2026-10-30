@@ -40,8 +40,20 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "isolate cmd/multica test home: %v\n", err)
 		os.Exit(1)
 	}
+	// A managed checkout has a task marker in an ancestor directory. Tests
+	// exercising ordinary member credentials must not inherit that context.
+	previousDir, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "get cmd/multica test cwd: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.Chdir(scratchHome); err != nil {
+		fmt.Fprintf(os.Stderr, "isolate cmd/multica test cwd: %v\n", err)
+		os.Exit(1)
+	}
 
 	code := m.Run()
+	_ = os.Chdir(previousDir)
 	_ = os.RemoveAll(scratchHome)
 	os.Exit(code)
 }
