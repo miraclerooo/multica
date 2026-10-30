@@ -115,4 +115,15 @@ func (d *Daemon) handleDirectoryBrowse(ctx context.Context, rt Runtime, request 
 	d.reportRuntimeResultWithRetry(ctx, "directory_browse", rt.ID, request.ID, func(ctx context.Context) error {
 		return d.client.postJSON(ctx, fmt.Sprintf("/api/daemon/runtimes/%s/directories/%s/result", rt.ID, request.ID), report, nil)
 	})
+	// The next folder click can arrive inside the hint throttle window.
+	// One follow-up heartbeat drains it without waiting for the periodic tick;
+	// an empty queue schedules no more work.
+	timer := time.NewTimer(pendingWorkHintMinInterval)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return
+	case <-timer.C:
+		d.handlePendingWorkHint(rt.ID, protocol.PendingWorkKindDirectories)
+	}
 }

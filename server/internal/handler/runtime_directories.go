@@ -269,7 +269,7 @@ func (h *Handler) InitiateDirectoryBrowse(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "failed to enqueue directory request")
 		return
 	}
-	h.requestDaemonPendingWork(request.RuntimeID, "directories")
+	h.requestDaemonPendingWork(request.RuntimeID, protocol.PendingWorkKindDirectories)
 	writeJSON(w, http.StatusAccepted, request)
 }
 

@@ -47,6 +47,10 @@ Browser directory handles are never guessed into absolute paths.
 - `POST /api/daemon/runtimes/{runtimeId}/directories/{requestId}/result`: report
   a result or error. A pending-work notification requests an immediate heartbeat.
 
+After reporting a directory result, the daemon makes one follow-up heartbeat
+after the hint throttle window. This drains a subsequent folder click that
+arrived inside that window; an empty queue schedules no further work.
+
 Production servers share requests in Redis. Requests expire after 60 seconds;
 stored results expire after two minutes. Atomic claiming prevents two API nodes
 from dispatching the same request. A list returns at most 200 directories and

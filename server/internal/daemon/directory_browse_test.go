@@ -2,9 +2,14 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -67,5 +72,94 @@ func TestBrowseRejectsRelativePathAndCancelledContext(t *testing.T) {
 	cancel()
 	if _, err := browseLocalDirectories(ctx, protocol.DirectoryBrowseInput{Operation: "roots"}); err == nil {
 		t.Fatal("cancelled request continued")
+	}
+}
+
+func TestDirectoryBrowseHintRequestsRealFilesystem(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "project")
+	if err := os.Mkdir(project, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "private.txt"), []byte("not directory data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	queue := []protocol.PendingDirectoryBrowse{{
+		ID:                   strings.Repeat("a", 32),
+		DirectoryBrowseInput: protocol.DirectoryBrowseInput{Operation: "list", Path: root},
+	}}
+	reports := make(chan protocol.DirectoryBrowseReport, 2)
+	idle := make(chan struct{}, 1)
+	reportCount := 0
+	d, _ := pendingWorkHintDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/daemon/heartbeat":
+			mu.Lock()
+			ack := protocol.DaemonHeartbeatAckPayload{RuntimeID: "rt-1", Status: "ok"}
+			if len(queue) > 0 {
+				request := queue[0]
+				queue = queue[1:]
+				ack.PendingDirectoryBrowse = &request
+			} else if reportCount == 2 {
+				select {
+				case idle <- struct{}{}:
+				default:
+				}
+			}
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(ack)
+		case strings.HasPrefix(r.URL.Path, "/api/daemon/runtimes/rt-1/directories/"):
+			var report protocol.DirectoryBrowseReport
+			if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+				t.Error(err)
+				http.Error(w, "invalid report", http.StatusBadRequest)
+				return
+			}
+			mu.Lock()
+			reportCount++
+			mu.Unlock()
+			reports <- report
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	withPendingWorkHintMinInterval(t, time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	d.rootCtx = ctx
+	t.Cleanup(cancel)
+
+	d.handlePendingWorkHint("rt-1", "directories")
+	select {
+	case report := <-reports:
+		if report.Error != "" || report.Result == nil || len(report.Result.Entries) != 1 || report.Result.Entries[0].Path != project {
+			t.Fatalf("wrong real directory listing: %+v", report)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("directory listing was not reported")
+	}
+	mu.Lock()
+	queue = append(queue, protocol.PendingDirectoryBrowse{
+		ID:                   strings.Repeat("b", 32),
+		DirectoryBrowseInput: protocol.DirectoryBrowseInput{Operation: "validate", Path: project},
+	})
+	mu.Unlock()
+	// A user can click the returned folder before the one-second hint floor.
+	// This second request must not wait for the normal 15-second heartbeat.
+	d.handlePendingWorkHint("rt-1", "directories")
+	select {
+	case report := <-reports:
+		real, _ := filepath.EvalSymlinks(project)
+		if report.Error != "" || report.Result == nil || report.Result.Path != project || report.Result.RealPath != real {
+			t.Fatalf("wrong validated selection: %+v", report)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("follow-up folder selection stalled behind the periodic heartbeat")
+	}
+	select {
+	case <-idle:
+	case <-time.After(3 * time.Second):
+		t.Fatal("directory request queue did not drain")
 	}
 }
