@@ -43,6 +43,25 @@ Le statut du projet et celui des tâches sont indépendants : terminer toutes le
 
 Lorsqu'un agent traite une tâche d'un projet, le nom et la description du projet sont ajoutés au contexte de cette exécution. Placez dans la description ce que toutes les exécutions liées doivent savoir : l'objectif, les limites techniques, les conventions de livraison. Une exigence propre à une seule tâche s'écrit dans cette tâche.
 
+## Specs et documents
+
+Ouvrez **Specs et documents** dans un projet sur le Web ou Desktop. Parcourez les spécifications, guides et notes, ou recherchez un titre, un identifiant REQ ou du contenu. Une nouvelle spécification contient un modèle de contexte et objectifs, exigences, scénarios WHEN/THEN et critères de validation.
+
+**Lire / modifier**, **Vue partagée** et **Source** modifient le même Markdown. Cocher un critère dans l’éditeur direct met à jour son marqueur Markdown. **Enregistrer la révision**, ou Cmd/Ctrl+S, crée une version. Les brouillons restent sur le même appareil après navigation ou actualisation. Leur abandon demande confirmation.
+
+Le panneau droit présente les éditeurs récents, la référence de ressource du projet et l’historique. La comparaison comprend les deux titres et corps. En cas de conflit, gardez le brouillon, enregistrez une copie ou confirmez une nouvelle révision basée sur la version comparée. Une mise à jour distante ultérieure bloque toujours cet enregistrement.
+
+Les exécutions du projet lisent la dernière révision enregistrée :
+
+```bash
+multica project document list <project-id> --output json
+multica project document get <project-id> <document-id-or-uri> --output markdown
+multica project document update <project-id> <document-id> --base-version 2 --title "Feature Spec" --body-file ./spec.md
+multica project document history <project-id> <document-id>
+```
+
+Utilisez la version effectivement lue comme `--base-version`. Après un 409, lisez et comparez la nouvelle version avant de réessayer. La référence `multica://project/<project-id>/documents/<document-id>` se résout avec `project document get`. Les brouillons non enregistrés du navigateur ne sont pas partagés avec les exécutions.
+
 ## Ajouter des ressources
 
 Les ressources du projet indiquent aux agents quel code et quels répertoires de travail utiliser :

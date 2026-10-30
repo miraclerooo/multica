@@ -28,4 +28,4 @@ The conflict dialog shows the actual original base, local title/body and viewed 
 - Reject foreign workspace/project/document and resource references, invalid fields and unsupported kinds. Clean up document rows/revisions when deleting their project.
 - Verify shared web/desktop entry points, accessible dialogs and narrow-screen overflow, light/dark screenshots, API malformed-response tests, draft/state unit tests, handler/CLI integration tests and browser E2E.
 
-Verification results and remaining limits are recorded with the implementation handoff.
+See [verification results and screenshots](project-documents-verification.md). The API accepts bodies up to 1 MiB and titles up to 300 Unicode code points. Rollback removes managed document resources along with document tables; normal project and workspace deletion clean up their documents, revisions and resources in application transactions.

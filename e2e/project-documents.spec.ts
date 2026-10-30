@@ -113,7 +113,10 @@ test("creates both document kinds, edits all modes and saves Markdown checkboxes
       .evaluate((node) => {
         node.scrollTo({ top: 0, behavior: "instant" });
       });
-    await page.screenshot({ path: info.outputPath("spec-editor-split.png") });
+    await page.screenshot({
+      path: info.outputPath("spec-editor-split.png"),
+      style: "nextjs-portal { display: none !important; }",
+    });
     await page
       .getByRole("button", { name: "Read / edit", exact: true })
       .click();
@@ -150,11 +153,15 @@ test("creates both document kinds, edits all modes and saves Markdown checkboxes
     await expect(page.locator("html")).not.toHaveClass(/dark/);
     await page.screenshot({
       path: info.outputPath("spec-workspace-light.png"),
+      style: "nextjs-portal { display: none !important; }",
     });
     await page.emulateMedia({ colorScheme: "dark" });
     await expect(page.locator("html")).toHaveClass(/dark/);
     await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
-    await page.screenshot({ path: info.outputPath("spec-workspace-dark.png") });
+    await page.screenshot({
+      path: info.outputPath("spec-workspace-dark.png"),
+      style: "nextjs-portal { display: none !important; }",
+    });
     await page
       .getByRole("button", { name: "New document", exact: true })
       .click();
@@ -386,7 +393,10 @@ test("compares real conflicts, rejects a newly stale confirmation, and preserves
     await expect(page.getByRole("dialog")).toContainText("Local renamed title");
     await expect(page.locator('[role="alertdialog"]')).toHaveCount(0);
     await expect(page.getByRole("dialog")).toHaveCSS("opacity", "1");
-    await page.screenshot({ path: info.outputPath("spec-revision-diff.png") });
+    await page.screenshot({
+      path: info.outputPath("spec-revision-diff.png"),
+      style: "nextjs-portal { display: none !important; }",
+    });
     await page
       .getByRole("dialog")
       .getByRole("button", { name: "Keep draft", exact: true })
