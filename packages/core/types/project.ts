@@ -64,15 +64,18 @@ export interface ListProjectsResponse {
   total: number;
 }
 
-// ProjectResource is a typed pointer from a project to an external resource.
+// ProjectResource is a typed pointer from a project to a durable resource.
 // The resource_ref shape depends on resource_type. New types add a case in
 // validateAndNormalizeResourceRef on the server and a renderer in the UI.
 //
 // Known types (UI must default-case unknown server-side additions):
+//   - project_document: managed Markdown document, ref = { document_id }
 //   - github_repo: cloud-side git checkout, ref = { url, ref?, default_branch_hint? }
 //   - local_directory: agent execution on a specific daemon,
 //     ref = { local_path, daemon_id, label?, execution_mode? }
-export type ProjectResourceType = "github_repo" | "local_directory";
+export type ProjectResourceType = "github_repo" | "local_directory" | "project_document";
+
+export interface ProjectDocumentResourceRef { document_id: string }
 
 export interface GithubRepoResourceRef {
   url: string;
@@ -110,6 +113,7 @@ export interface LocalDirectoryResourceRef {
 export type ProjectResourceRef =
   | GithubRepoResourceRef
   | LocalDirectoryResourceRef
+  | ProjectDocumentResourceRef
   | Record<string, unknown>;
 
 export interface ProjectResource {

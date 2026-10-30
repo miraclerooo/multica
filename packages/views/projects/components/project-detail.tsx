@@ -27,6 +27,8 @@ import { currentPath, useNavigation } from "../../navigation";
 import { TitleEditor, ContentEditor, type ContentEditorRef } from "../../editor";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { ProjectResourcesSection } from "./project-resources-section";
+import { ProjectDocumentWorkspace } from "../documents/document-workspace";
+import { ProjectViewTabs } from "./project-view-tabs";
 import { ProjectStartDatePicker } from "./project-start-date-picker";
 import { ProjectDueDatePicker } from "./project-due-date-picker";
 import { ProjectWorkflowControl } from "../../workflows/project-workflow-row";
@@ -256,6 +258,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
   const issueMetrics = getProjectIssueMetrics(project);
   const statusCfg = PROJECT_STATUS_CONFIG[project.status];
+
+  if (router.searchParams?.get("view") === "docs") return <ProjectDocumentWorkspace project={project} />;
 
   const sidebarContent = (
     <div className="space-y-5">
@@ -498,7 +502,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         <div ref={rightSidebarShortcutTargetRef} className="flex h-full flex-col">
           <BreadcrumbHeader
             segments={[{ href: wsPaths.projects(), label: t(($) => $.detail.breadcrumb_fallback) }]}
-            leaf={<span className="truncate font-medium text-foreground">{project.title}</span>}
+            leaf={<div className="flex min-w-0 items-center gap-4"><span className="truncate font-medium text-foreground">{project.title}</span><ProjectViewTabs projectId={project.id} active="issues" /></div>}
             actions={
               <>
               <ProjectWorkflowMenu project={project} />
