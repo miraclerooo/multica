@@ -969,6 +969,13 @@ func (s *IssueService) isSquadLeaderReady(ctx context.Context, issue db.Issue) b
 	if err != nil {
 		return false
 	}
+	if squad.InstructionsMode == "pipeline" {
+		return !squad.ArchivedAt.Valid && squad.PipelineDefinitionID.Valid && s.TaskService != nil && s.TaskService.Pipelines != nil
+	}
+	if squad.InstructionsMode != "markdown" {
+		return false
+	}
+
 	agent, err := s.Queries.GetAgent(ctx, squad.LeaderID)
 	if err != nil {
 		return false
@@ -988,6 +995,17 @@ func (s *IssueService) enqueueSquadLeaderTask(ctx context.Context, issue db.Issu
 	if err != nil {
 		return
 	}
+	if squad.InstructionsMode != "markdown" {
+		actor := pgtype.UUID{}
+		if authorType == "member" {
+			actor = pipelineUUID(authorID)
+		}
+		if _, err := s.TaskService.EnqueueTaskForSquadLeaderByActor(ctx, issue, squad.LeaderID, squad.ID, actor); err != nil {
+			slog.Warn("start pipeline on issue creation", "issue_id", util.UUIDToString(issue.ID), "error", err)
+		}
+		return
+	}
+
 	hasPending, err := s.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
 		IssueID: issue.ID,
 		AgentID: squad.LeaderID,

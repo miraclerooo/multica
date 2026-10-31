@@ -180,6 +180,9 @@ type AgentTaskQueue struct {
 	CancelledByName           pgtype.Text `json:"cancelled_by_name"`
 	IssueSnapshot             []byte      `json:"issue_snapshot"`
 	WorkflowStep              pgtype.Text `json:"workflow_step"`
+	PipelineRunID             pgtype.UUID `json:"pipeline_run_id"`
+	PipelineJobID             pgtype.Text `json:"pipeline_job_id"`
+	PipelineAttempt           pgtype.Int4 `json:"pipeline_attempt"`
 }
 
 type AgentToLabel struct {
@@ -1254,6 +1257,37 @@ type PinnedItem struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type PipelineDefinition struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	SquadID         pgtype.UUID        `json:"squad_id"`
+	Revision        int64              `json:"revision"`
+	Kind            string             `json:"kind"`
+	Source          string             `json:"source"`
+	SourceHash      string             `json:"source_hash"`
+	CompilerVersion string             `json:"compiler_version"`
+	Plan            []byte             `json:"plan"`
+	CreatorID       pgtype.UUID        `json:"creator_id"`
+	IdempotencyKey  string             `json:"idempotency_key"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+type PipelineRun struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	SquadID        pgtype.UUID        `json:"squad_id"`
+	DefinitionID   pgtype.UUID        `json:"definition_id"`
+	CreatorID      pgtype.UUID        `json:"creator_id"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	RequestHash    string             `json:"request_hash"`
+	Status         string             `json:"status"`
+	Revision       int64              `json:"revision"`
+	State          []byte             `json:"state"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type PluginHookSchedule struct {
 	ID             pgtype.UUID        `json:"id"`
 	InstallationID pgtype.UUID        `json:"installation_id"`
@@ -1510,18 +1544,21 @@ type SkillToLabel struct {
 }
 
 type Squad struct {
-	ID           pgtype.UUID        `json:"id"`
-	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
-	Name         string             `json:"name"`
-	Description  string             `json:"description"`
-	LeaderID     pgtype.UUID        `json:"leader_id"`
-	CreatorID    pgtype.UUID        `json:"creator_id"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	ArchivedAt   pgtype.Timestamptz `json:"archived_at"`
-	ArchivedBy   pgtype.UUID        `json:"archived_by"`
-	AvatarUrl    pgtype.Text        `json:"avatar_url"`
-	Instructions string             `json:"instructions"`
+	ID                   pgtype.UUID        `json:"id"`
+	WorkspaceID          pgtype.UUID        `json:"workspace_id"`
+	Name                 string             `json:"name"`
+	Description          string             `json:"description"`
+	LeaderID             pgtype.UUID        `json:"leader_id"`
+	CreatorID            pgtype.UUID        `json:"creator_id"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ArchivedAt           pgtype.Timestamptz `json:"archived_at"`
+	ArchivedBy           pgtype.UUID        `json:"archived_by"`
+	AvatarUrl            pgtype.Text        `json:"avatar_url"`
+	Instructions         string             `json:"instructions"`
+	InstructionsMode     string             `json:"instructions_mode"`
+	PipelineDefinitionID pgtype.UUID        `json:"pipeline_definition_id"`
+	Revision             int64              `json:"revision"`
 }
 
 type SquadMember struct {

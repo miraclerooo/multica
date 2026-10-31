@@ -2190,6 +2190,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			})
 
 			// Squads
+			h.PipelineRoutes(r)
 			r.Route("/api/squads", func(r chi.Router) {
 				r.Get("/", h.ListSquads)
 				r.Post("/", h.CreateSquad)

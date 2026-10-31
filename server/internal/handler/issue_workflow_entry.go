@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	"github.com/multica-ai/multica/server/internal/issueworkflow"
+	"github.com/multica-ai/multica/server/internal/pipeline"
 	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -46,6 +47,9 @@ type workflowHandoff struct {
 // move the issue from the step it works on. It returns the handoff that write
 // triggers, or nil.
 func (h *Handler) applyIssueWorkflow(ctx context.Context, prev db.Issue, params *db.UpdateIssueParams, statusExplicit, assigneeTouched, enterOnMove bool, run *db.AgentTaskQueue) (*workflowHandoff, error) {
+	if run != nil && run.PipelineRunID.Valid && (statusExplicit || assigneeTouched) {
+		return nil, pipeline.Fail("pipeline_managed_issue", "pipeline jobs report their result; the server owns issue status and assignment")
+	}
 	def, project, err := issueworkflow.ForProject(ctx, h.Queries, prev.WorkspaceID, params.ProjectID)
 	if err != nil || def == nil {
 		return nil, err
@@ -120,6 +124,11 @@ func workflowHandoffPayload(issue db.Issue, hand *workflowHandoff, note string, 
 // writeIssueWorkflowError answers a workflow rejection. It reports false when
 // err is not one, so the caller can fall through to its generic 500.
 func writeIssueWorkflowError(w http.ResponseWriter, err error) bool {
+	var managed *pipeline.Error
+	if errors.As(err, &managed) {
+		writePipelineError(w, err)
+		return true
+	}
 	var notIn *issueworkflow.NotInWorkflowError
 	if errors.As(err, &notIn) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{

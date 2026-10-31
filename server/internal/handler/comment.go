@@ -2637,6 +2637,7 @@ func (h *Handler) enqueueSingleCommentTrigger(ctx context.Context, issue db.Issu
 // — the implicit routing fallbacks (assignee, thread parent, conversation) were
 // never named by the user, so a no-route there is not a silent no-op.
 func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issue, content string, parentComment *db.Comment, actorType, actorID string, opts commentTriggerComputeOptions) ([]commentAgentTrigger, []commentMentionTarget) {
+	if h.pipelineOwnsComments(ctx, issue, opts.AuthoringTaskID) { return nil, nil }
 	// A persisted comment determines its thread; previews use the parent.
 	// A new top-level preview has no thread yet and cannot merge with a queue.
 	opts.ThreadCommentID = opts.ExcludeTriggerCommentID

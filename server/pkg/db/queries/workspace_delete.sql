@@ -271,6 +271,12 @@ WHERE webhook_delivery.workspace_id = $1
 -- before this step; what is left is keyed by the workspace or by one of the
 -- workspace-scoped id sets below.
 WITH
+deleted_pipeline_runs AS (
+    DELETE FROM pipeline_run WHERE workspace_id=$1
+),
+deleted_pipeline_definitions AS (
+    DELETE FROM pipeline_definition WHERE workspace_id=$1
+),
 ws_agents AS MATERIALIZED (
     SELECT id FROM agent WHERE workspace_id = $1
 ),

@@ -848,7 +848,9 @@ func (s *AutopilotService) dispatchCreateIssue(ctx context.Context, ap db.Autopi
 		// clicker, else the trigger's created_by — see autopilotAdmitInvoke) may
 		// still invoke the leader. Catches configs that predate the save-time
 		// gate, and configs that no longer pass (MUL-3963 / MUL-4525).
-		if !s.autopilotAdmitInvoke(ctx, ap, leader, actorUserID, run.TriggerID) {
+		if handled, err := s.pipelineSquadAdmission(ctx, ap, actorUserID, run.TriggerID); handled && err != nil {
+			return err
+		} else if !handled && !s.autopilotAdmitInvoke(ctx, ap, leader, actorUserID, run.TriggerID) {
 			return fmt.Errorf("not allowed to invoke private squad leader")
 		}
 		if actorUserID.Valid {
@@ -989,6 +991,16 @@ func (e *errDispatchSkipped) Error() string { return e.reason }
 // admission and dispatch, or the runtime went offline in the gap, we still
 // fail closed instead of enqueueing a doomed task.
 func (s *AutopilotService) dispatchRunOnly(ctx context.Context, ap db.Autopilot, run *db.AutopilotRun, actorUserID pgtype.UUID) error {
+	if ap.AssigneeType == "squad" {
+		sq, e := s.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{ID: ap.AssigneeID, WorkspaceID: ap.WorkspaceID})
+		if e != nil {
+			return e
+		}
+		if sq.InstructionsMode != "markdown" {
+			return fmt.Errorf("unsupported_capability: pipeline squads require create_issue automation")
+		}
+	}
+
 	agent, _, err := s.resolveAutopilotLeader(ctx, ap)
 	if err != nil {
 		// Same admission-vs-failure classification as shouldSkipDispatch:
@@ -1128,6 +1140,9 @@ func (s *AutopilotService) SyncRunFromIssue(ctx context.Context, issue db.Issue)
 	}
 
 	wsID := util.UUIDToString(issue.WorkspaceID)
+	if s.syncPipelineAutopilotRun(ctx, run) {
+		return
+	}
 
 	// Custom statuses only finalize terminal lifecycle (done/closed). Review
 	// completion remains exclusive to the fixed built-in key.
@@ -1271,6 +1286,10 @@ func (s *AutopilotService) SyncRunFromLinkedIssueTask(ctx context.Context, task 
 	run, err := s.Queries.GetAutopilotRunByIssue(ctx, task.IssueID)
 	if err != nil {
 		return // no active run linked to this issue
+	}
+	if task.PipelineRunID.Valid {
+		s.syncPipelineAutopilotRun(ctx, run)
+		return
 	}
 	// Only the autopilot's own dispatch (and its auto-retries) settles the
 	// run. Other tasks on the issue — an @mention, a comment reply — say
@@ -1550,6 +1569,13 @@ func (s *AutopilotService) failRun(ctx context.Context, runID pgtype.UUID, reaso
 //     agent assignee being missing is now a real condition the gate must
 //     handle (previously cascade-deleted).
 func (s *AutopilotService) shouldSkipDispatch(ctx context.Context, ap db.Autopilot, actorUserID, triggerID pgtype.UUID) (string, dispatch.ReasonCode, bool) {
+	if handled, err := s.pipelineSquadAdmission(ctx, ap, actorUserID, triggerID); handled {
+		if err != nil {
+			return err.Error(), dispatch.ReasonInvocationNotAllowed, true
+		}
+		return "", "", false
+	}
+
 	if !ap.AssigneeID.Valid {
 		return "autopilot has no assignee", dispatch.ReasonTargetUnavailable, true
 	}

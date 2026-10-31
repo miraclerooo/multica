@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS pipeline_run_active;

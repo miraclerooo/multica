@@ -28,6 +28,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/logger"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	"github.com/multica-ai/multica/server/internal/middleware"
+	"github.com/multica-ai/multica/server/internal/pipeline"
 	"github.com/multica-ai/multica/server/internal/qoderruntime"
 	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
@@ -4277,6 +4278,25 @@ func (h *Handler) validateAssigneePair(ctx context.Context, r *http.Request, wor
 		}
 		if squad.ArchivedAt.Valid {
 			return http.StatusBadRequest, "cannot assign to an archived squad"
+		}
+		if squad.InstructionsMode != "markdown" && squad.InstructionsMode != "pipeline" {
+			return http.StatusUnprocessableEntity, "unsupported_capability: unknown squad instructions_mode"
+		}
+		if squad.InstructionsMode == "pipeline" {
+			d, e := h.Queries.GetPipelineDefinition(ctx, db.GetPipelineDefinitionParams{ID: squad.PipelineDefinitionID, WorkspaceID: wsUUID})
+			if e != nil || d.SquadID != squad.ID {
+				return 422, "definition_not_owned: squad needs an owned definition"
+			}
+			var plan pipeline.Plan
+			if json.Unmarshal(d.Plan, &plan) != nil {
+				return 422, "invalid pipeline plan"
+			}
+			actorType, actorID := h.resolveActor(r, requestUserID(r), workspaceID)
+			user := h.invokeOriginatorFromRequest(r, actorType, actorID)
+			if _, diagnostics := h.Pipelines.Bindings(ctx, h.Queries, squad, plan, user); len(diagnostics) > 0 {
+				return 403, diagnostics[0].Code + ": " + diagnostics[0].Message
+			}
+			return 0, ""
 		}
 		leader, err := h.Queries.GetAgent(ctx, squad.LeaderID)
 		if err != nil || leader.ArchivedAt.Valid {

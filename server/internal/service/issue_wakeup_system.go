@@ -338,6 +338,15 @@ func resolveWakeTarget(ctx context.Context, q *db.Queries, issue db.Issue) (wake
 		if err != nil {
 			return target, err
 		}
+		if squad.InstructionsMode != "markdown" {
+			return wakeTarget{Type: "none"}, nil
+		}
+		if _, e := q.GetActivePipelineRun(ctx, db.GetActivePipelineRunParams{WorkspaceID: issue.WorkspaceID, IssueID: issue.ID}); e == nil {
+			return wakeTarget{Type: "none"}, nil
+		} else if !errors.Is(e, pgx.ErrNoRows) {
+			return target, e
+		}
+
 		target.SquadID = squad.ID
 		leader, err := q.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: squad.LeaderID, WorkspaceID: issue.WorkspaceID})
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
