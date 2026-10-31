@@ -18,18 +18,25 @@ func init() {
 
 func newProjectDocumentCommand() *cobra.Command {
 	group := &cobra.Command{Use: "document", Short: "Read and maintain project Specs & Docs"}
-	for _, operation := range []string{"list", "get", "history", "create", "update"} {
+	for _, operation := range []string{"list", "get", "history", "sources", "create", "update"} {
 		op := operation
 		use := op + " <project-id>"
 		args := 1
-		if op == "get" || op == "history" || op == "update" {
+		if op == "get" || op == "history" || op == "sources" || op == "update" {
 			use += " <document-id-or-uri>"
 			args = 2
 		}
 		cmd := &cobra.Command{Use: use, Short: map[string]string{
-			"list": "Discover the project's saved documents", "get": "Read the latest saved document", "history": "Read immutable revisions", "create": "Create a document and attach its project resource", "update": "Save a revision against an explicit base version",
+			"list": "Discover the project's saved documents", "get": "Read the latest saved document", "history": "Read immutable revisions", "sources": "Read pinned source metadata", "create": "Create a document and attach its project resource", "update": "Save a revision against an explicit base version",
 		}[op], Args: exactArgs(args), RunE: func(cmd *cobra.Command, args []string) error { return runProjectDocument(cmd, args, op) }}
 		cmd.Flags().String("output", "json", "Output format: json, table, or markdown (get only)")
+		if op == "list" {
+			cmd.Flags().String("issue", "", "Filter by stable source issue ID or identifier")
+			cmd.Flags().String("search", "", "Search issue identifier/title or Markdown title/body")
+		}
+		if op == "get" {
+			cmd.Flags().Int32("version", 0, "Read a fixed immutable revision instead of latest")
+		}
 		if op == "create" || op == "update" {
 			cmd.Flags().String("title", "", "Document title (required)")
 			cmd.Flags().String("body-file", "", "UTF-8 Markdown file (required for update)")
@@ -45,6 +52,7 @@ func newProjectDocumentCommand() *cobra.Command {
 		}
 		group.AddCommand(cmd)
 	}
+	addDocumentAssociationCommands(group)
 	return group
 }
 
@@ -89,6 +97,30 @@ func runProjectDocument(cmd *cobra.Command, args []string, op string) error {
 	}
 	if op == "history" {
 		path += "/revisions"
+	}
+	if op == "sources" {
+		path += "/sources"
+	}
+	if op == "get" {
+		version, _ := cmd.Flags().GetInt32("version")
+		if version < 0 {
+			return fmt.Errorf("version must be positive")
+		}
+		if version > 0 {
+			path += fmt.Sprintf("/revisions/%d", version)
+		}
+	}
+	if op == "list" {
+		query := url.Values{}
+		if issue, _ := cmd.Flags().GetString("issue"); issue != "" {
+			query.Set("issue_id", issue)
+		}
+		if search, _ := cmd.Flags().GetString("search"); search != "" {
+			query.Set("q", search)
+		}
+		if len(query) > 0 {
+			path += "?" + query.Encode()
+		}
 	}
 	var result map[string]any
 	switch op {

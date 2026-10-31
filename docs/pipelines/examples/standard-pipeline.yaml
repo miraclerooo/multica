@@ -1,0 +1,56 @@
+kind: gitlab_yaml
+stages: [plan, implement, verify, approve]
+
+plan:
+  stage: plan
+  tags: [leader]
+  instructions: |
+    阅读触发任务、评论和附件，明确目标、已授权范围、验收标准及实现方案。
+    本模板只适用于已经获得实施授权的任务。发现需要新增授权或范围决策时，
+    明确记录阻塞，停止本作业，不将未决问题描述成已批准。
+    将计划、输入依据和未决问题写入 reports/plan.md，并交付到可访问的位置。
+    完成时在任务回复及最终消息中分别单独列出：
+    ARTIFACT: reports/plan.md
+    REF: <实际交付分支或提交，不要保留占位符>
+    通过当前作业的 job report 接口提交结果：完成为 succeeded，缺少决策为 blocked。
+  artifacts:
+    paths: [reports/plan.md]
+
+implement:
+  stage: implement
+  needs: [plan]
+  tags: [leader]
+  instructions: |
+    读取上游 plan 的实际交付物，按已授权的计划实施并运行适当的本地检查。
+    将变更、检查命令及结果、未解决问题写入 reports/implementation.md。
+    报告必须包含代码仓库、基线、交付提交及分支或 PR，实际代码应可供下游读取。
+    上游材料不可访问或存在未决授权时记录阻塞并停止，不自行扩大范围。
+    完成时在任务回复及最终消息中分别单独列出：
+    ARTIFACT: reports/implementation.md
+    REF: <实际交付分支或提交，不要保留占位符>
+    通过当前作业的 job report 接口提交结果：完成为 succeeded，检查失败为 failed，无法继续为 blocked。
+  artifacts:
+    paths: [reports/implementation.md]
+
+verify:
+  stage: verify
+  needs: [plan, implement]
+  tags: [leader]
+  instructions: |
+    读取 plan 和 implement 的实际交付物，检出被交付的准确提交后验证。
+    对照验收标准记录检查证据、未通过项和剩余风险，写入 reports/verification.md。
+    明确给出通过、需返工或阻塞的建议；记录代码提交和检查范围。
+    产出验证报告不等于检查通过。发现问题时明确说明，不声称通过。
+    本地检查与外部 CI 状态分别记录，不以未取得的 CI 结果作为通过证据。
+    完成时在任务回复及最终消息中分别单独列出：
+    ARTIFACT: reports/verification.md
+    REF: <实际交付分支或提交，不要保留占位符>
+    通过当前作业的 job report 接口提交结果：检查通过为 succeeded，未通过为 failed，无法验证为 blocked。
+  artifacts:
+    paths: [reports/verification.md]
+
+accept:
+  stage: approve
+  needs: [verify]
+  when: manual
+  allow_failure: false

@@ -1,0 +1,61 @@
+kind: gitlab_yaml
+stages: [plan, plan_review, implement, verify, approve]
+
+plan:
+  stage: plan
+  tags: [leader]
+  instructions: |
+    阅读需求、评论和附件，形成目标、范围、验收标准、实现方案与风险。
+    将可评审的 spec、未决问题和实施授权边界写入 reports/plan.md。
+    本作业只交付方案，等待 plan_approval 的人工决定后才能进入实施。
+    完成时在任务回复及最终消息中分别单独列出：
+    ARTIFACT: reports/plan.md
+    REF: <实际交付分支或提交，不要保留占位符>
+    通过当前作业的 job report 接口提交结果：方案可评审为 succeeded，输入不足无法形成方案为 blocked。
+    等待后续 plan_approval 是正常流程，不把该人工审核本身记为本作业阻塞。
+  artifacts:
+    paths: [reports/plan.md]
+
+plan_approval:
+  stage: plan_review
+  needs: [plan]
+  when: manual
+  allow_failure: false
+
+implement:
+  stage: implement
+  needs: [plan, plan_approval]
+  tags: [leader]
+  instructions: |
+    读取已批准的 plan 交付物与审批意见，按计划实施并运行适当的本地检查。
+    若需要改变已批准范围，记录阻塞并停止，不把方案批准扩展为其他授权。
+    将变更、检查结果和未解决问题写入 reports/implementation.md。
+    报告必须包含代码仓库、基线、实际交付提交及分支或 PR，交付实际代码。
+    完成时在任务回复及最终消息中分别单独列出：
+    ARTIFACT: reports/implementation.md
+    REF: <实际交付分支或提交，不要保留占位符>
+    通过当前作业的 job report 接口提交结果：完成为 succeeded，检查失败为 failed，无法继续为 blocked。
+  artifacts:
+    paths: [reports/implementation.md]
+
+verify:
+  stage: verify
+  needs: [plan, implement]
+  tags: [leader]
+  instructions: |
+    读取 plan 与 implement 的实际交付物，针对准确交付提交对照 spec 验证。
+    将检查证据、未通过项、剩余风险及人工验收建议写入 reports/verification.md。
+    给出通过、需返工或阻塞的建议，不以运行结束或报告已写出代替质量结论。
+    本地检查与外部 CI 状态分别记录。
+    完成时在任务回复及最终消息中分别单独列出：
+    ARTIFACT: reports/verification.md
+    REF: <实际交付分支或提交，不要保留占位符>
+    通过当前作业的 job report 接口提交结果：检查通过为 succeeded，未通过为 failed，无法验证为 blocked。
+  artifacts:
+    paths: [reports/verification.md]
+
+accept:
+  stage: approve
+  needs: [verify]
+  when: manual
+  allow_failure: false

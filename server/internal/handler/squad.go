@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/analytics"
 	"github.com/multica-ai/multica/server/internal/logger"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
+	"github.com/multica-ai/multica/server/internal/pipeline"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/dbid"
@@ -22,20 +24,23 @@ import (
 // ── Response types ──────────────────────────────────────────────────────────
 
 type SquadResponse struct {
-	ID            string                       `json:"id"`
-	WorkspaceID   string                       `json:"workspace_id"`
-	Name          string                       `json:"name"`
-	Description   string                       `json:"description"`
-	Instructions  string                       `json:"instructions"`
-	AvatarURL     *string                      `json:"avatar_url"`
-	LeaderID      string                       `json:"leader_id"`
-	CreatorID     string                       `json:"creator_id"`
-	CreatedAt     string                       `json:"created_at"`
-	UpdatedAt     string                       `json:"updated_at"`
-	ArchivedAt    *string                      `json:"archived_at"`
-	ArchivedBy    *string                      `json:"archived_by"`
-	MemberCount   int                          `json:"member_count"`
-	MemberPreview []SquadMemberPreviewResponse `json:"member_preview"`
+	InstructionsMode     string                       `json:"instructions_mode"`
+	PipelineDefinitionID *string                      `json:"pipeline_definition_id"`
+	Revision             int64                        `json:"revision"`
+	ID                   string                       `json:"id"`
+	WorkspaceID          string                       `json:"workspace_id"`
+	Name                 string                       `json:"name"`
+	Description          string                       `json:"description"`
+	Instructions         string                       `json:"instructions"`
+	AvatarURL            *string                      `json:"avatar_url"`
+	LeaderID             string                       `json:"leader_id"`
+	CreatorID            string                       `json:"creator_id"`
+	CreatedAt            string                       `json:"created_at"`
+	UpdatedAt            string                       `json:"updated_at"`
+	ArchivedAt           *string                      `json:"archived_at"`
+	ArchivedBy           *string                      `json:"archived_by"`
+	MemberCount          int                          `json:"member_count"`
+	MemberPreview        []SquadMemberPreviewResponse `json:"member_preview"`
 }
 
 type SquadMemberPreviewResponse struct {
@@ -62,19 +67,22 @@ type SquadMemberResponse struct {
 
 func (h *Handler) squadToResponse(s db.Squad) SquadResponse {
 	return SquadResponse{
-		ID:            uuidToString(s.ID),
-		WorkspaceID:   uuidToString(s.WorkspaceID),
-		Name:          s.Name,
-		Description:   s.Description,
-		Instructions:  s.Instructions,
-		AvatarURL:     h.resolveAvatarURLPtr(textToPtr(s.AvatarUrl)),
-		LeaderID:      uuidToString(s.LeaderID),
-		CreatorID:     uuidToString(s.CreatorID),
-		CreatedAt:     timestampToString(s.CreatedAt),
-		UpdatedAt:     timestampToString(s.UpdatedAt),
-		ArchivedAt:    timestampToPtr(s.ArchivedAt),
-		ArchivedBy:    uuidToPtr(s.ArchivedBy),
-		MemberPreview: []SquadMemberPreviewResponse{},
+		InstructionsMode:     s.InstructionsMode,
+		PipelineDefinitionID: uuidToPtr(s.PipelineDefinitionID),
+		Revision:             s.Revision,
+		ID:                   uuidToString(s.ID),
+		WorkspaceID:          uuidToString(s.WorkspaceID),
+		Name:                 s.Name,
+		Description:          s.Description,
+		Instructions:         s.Instructions,
+		AvatarURL:            h.resolveAvatarURLPtr(textToPtr(s.AvatarUrl)),
+		LeaderID:             uuidToString(s.LeaderID),
+		CreatorID:            uuidToString(s.CreatorID),
+		CreatedAt:            timestampToString(s.CreatedAt),
+		UpdatedAt:            timestampToString(s.UpdatedAt),
+		ArchivedAt:           timestampToPtr(s.ArchivedAt),
+		ArchivedBy:           uuidToPtr(s.ArchivedBy),
+		MemberPreview:        []SquadMemberPreviewResponse{},
 	}
 }
 
@@ -357,11 +365,14 @@ func (h *Handler) UpdateSquad(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name         *string `json:"name"`
-		Description  *string `json:"description"`
-		Instructions *string `json:"instructions"`
-		LeaderID     *string `json:"leader_id"`
-		AvatarURL    *string `json:"avatar_url"`
+		Name                 *string `json:"name"`
+		Description          *string `json:"description"`
+		Instructions         *string `json:"instructions"`
+		InstructionsMode     *string `json:"instructions_mode"`
+		PipelineDefinitionID *string `json:"pipeline_definition_id"`
+		ExpectedRevision     *int64  `json:"expected_revision"`
+		LeaderID             *string `json:"leader_id"`
+		AvatarURL            *string `json:"avatar_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -398,11 +409,20 @@ func (h *Handler) UpdateSquad(w http.ResponseWriter, r *http.Request) {
 	// leader Agent. Take the exclusive side in the same order so leader
 	// rotation and active Autopilot saves cannot leave an automation pointing
 	// at an unbound effective Agent.
-	if _, err := qtx.LockSquadForUpdate(r.Context(), db.LockSquadForUpdateParams{
+	lockedSquad, err := qtx.LockSquadForUpdate(r.Context(), db.LockSquadForUpdateParams{
 		ID:          squad.ID,
 		WorkspaceID: wsUUID,
-	}); err != nil {
+	})
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update squad")
+		return
+	}
+	if req.ExpectedRevision != nil && *req.ExpectedRevision != lockedSquad.Revision {
+		writePipelineError(w, pipeline.Fail("revision_conflict", "squad revision changed"))
+		return
+	}
+	if (req.InstructionsMode != nil || req.PipelineDefinitionID != nil) && req.ExpectedRevision == nil {
+		writePipelineError(w, pipeline.Fail("revision_conflict", "expected_revision is required to change pipeline configuration"))
 		return
 	}
 
@@ -452,6 +472,47 @@ func (h *Handler) UpdateSquad(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update squad")
 		return
+	}
+	if req.InstructionsMode != nil || req.PipelineDefinitionID != nil {
+		mode := lockedSquad.InstructionsMode
+		if req.InstructionsMode != nil {
+			mode = *req.InstructionsMode
+		}
+		definitionID := lockedSquad.PipelineDefinitionID
+		if req.PipelineDefinitionID != nil {
+			var valid bool
+			definitionID, valid = parseUUIDOrBadRequest(w, *req.PipelineDefinitionID, "pipeline_definition_id")
+			if !valid {
+				return
+			}
+		}
+		switch mode {
+		case "markdown":
+			definitionID = pgtype.UUID{}
+		case "pipeline":
+			definition, e := qtx.GetPipelineDefinition(r.Context(), db.GetPipelineDefinitionParams{ID: definitionID, WorkspaceID: wsUUID})
+			if e != nil || definition.SquadID != squad.ID {
+				writePipelineError(w, pipeline.Fail("definition_not_owned", "definition must belong to this squad"))
+				return
+			}
+			var plan pipeline.Plan
+			if json.Unmarshal(definition.Plan, &plan) != nil {
+				writeError(w, 500, "invalid compiled plan")
+				return
+			}
+			if _, d := h.Pipelines.Bindings(r.Context(), qtx, updated, plan, uuidToString(member.UserID)); len(d) > 0 {
+				writePipelineError(w, pipeline.Fail(d[0].Code, d[0].Message))
+				return
+			}
+		default:
+			writePipelineError(w, pipeline.Fail("unsupported_capability", "unknown instructions_mode"))
+			return
+		}
+		updated, err = qtx.SetSquadPipeline(r.Context(), db.SetSquadPipelineParams{ID: squad.ID, WorkspaceID: wsUUID, InstructionsMode: mode, PipelineDefinitionID: definitionID, Revision: updated.Revision})
+		if err != nil {
+			writePipelineError(w, err)
+			return
+		}
 	}
 	var pausedAutopilots []db.Autopilot
 	if req.LeaderID != nil && !newLeaderRuntimeBound {
@@ -1152,6 +1213,7 @@ func (h *Handler) shouldSuppressSquadLeaderSelfTrigger(ctx context.Context, issu
 	if err != nil {
 		return false
 	}
+
 	if latest.IsLeaderTask {
 		return true
 	}
@@ -1193,6 +1255,21 @@ func (h *Handler) enqueueSquadLeaderTask(ctx context.Context, issue db.Issue, tr
 	})
 	if err != nil {
 		return false
+	}
+
+	if squad.InstructionsMode != "markdown" && squad.InstructionsMode != "pipeline" {
+		return false
+	}
+	if squad.InstructionsMode == "pipeline" {
+		user := authorID
+		if authorType != "member" {
+			user = uuidToString(h.TaskService.OriginatorForIssueTask(ctx, issue, pgtype.UUID{}))
+		}
+		_, err := h.Pipelines.Start(ctx, issue, uuidToString(squad.ID), "", user, fmt.Sprintf("assignment:%d", issue.Revision), handoffNote)
+		if err != nil {
+			slog.Warn("start assigned pipeline", "error", err, "issue_id", uuidToString(issue.ID))
+		}
+		return err == nil
 	}
 
 	// The gate must judge the SAME top-of-chain human the enqueue path will

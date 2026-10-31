@@ -1,0 +1,38 @@
+kind: hermes_yaml
+id: context-to-brief
+name: 资料整理与结论确认示例
+version: 1.0.0
+roles:
+  leader: {}
+gates:
+  confirm_brief:
+    type: manual
+states:
+  collect_context:
+    title: 整理资料
+    by: leader
+    entry: |
+      阅读本次任务和可用资料，提取事实、来源与待确认问题。
+      将整理结果交付到 reports/context.md。
+      完成时在任务回复及最终消息中分别单独列出：
+      ARTIFACT: reports/context.md
+      REF: <实际交付分支或提交，不要保留占位符>
+      通过当前作业的 job report 接口提交 succeeded、failed 或 blocked 结果。
+    artifacts:
+      paths: [reports/context.md]
+  compose_brief:
+    title: 形成结论
+    by: leader
+    gate: confirm_brief
+    entry: |
+      读取 collect_context 的实际交付物，形成结论、依据与未决问题。
+      将报告交付到 reports/brief.md，供后续人工确认。
+      本作业完成报告后即可上报结果，不代替人工节点作出确认。
+      完成时在任务回复及最终消息中分别单独列出：
+      ARTIFACT: reports/brief.md
+      REF: <实际交付分支或提交，不要保留占位符>
+      通过当前作业的 job report 接口提交 succeeded、failed 或 blocked 结果。
+    artifacts:
+      paths: [reports/brief.md]
+edges:
+  - {from: collect_context, to: compose_brief, type: forward}
