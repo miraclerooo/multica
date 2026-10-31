@@ -17,16 +17,18 @@ func Fail(code, message string) error { return &Error{code, message} }
 func Fingerprint(v any) string        { b, _ := json.Marshal(v); return fmt.Sprintf("%x", sha256.Sum256(b)) }
 
 type Artifact struct {
-	ID           string `json:"id"`
-	JobID        string `json:"job_id"`
-	Attempt      int    `json:"attempt"`
-	Path         string `json:"path"`
-	AttachmentID string `json:"attachment_id,omitempty"`
-	Repo         string `json:"repo,omitempty"`
-	Ref          string `json:"ref,omitempty"`
-	SHA          string `json:"sha,omitempty"`
-	Status       string `json:"status"`
-	Reason       string `json:"reason,omitempty"`
+	ID              string `json:"id"`
+	JobID           string `json:"job_id"`
+	Attempt         int    `json:"attempt"`
+	Path            string `json:"path"`
+	AttachmentID    string `json:"attachment_id,omitempty"`
+	DocumentID      string `json:"document_id,omitempty"`
+	DocumentVersion int32  `json:"document_version,omitempty"`
+	Repo            string `json:"repo,omitempty"`
+	Ref             string `json:"ref,omitempty"`
+	SHA             string `json:"sha,omitempty"`
+	Status          string `json:"status"`
+	Reason          string `json:"reason,omitempty"`
 }
 type Report struct {
 	Result    string     `json:"result"`
@@ -442,5 +444,5 @@ func (r *Run) Retry(id string, revision int64, key string) error {
 func (r *Run) Brief(j *Job) string {
 	inputs, _ := r.Inputs(j)
 	b, _ := json.MarshalIndent(inputs, "", "  ")
-	return fmt.Sprintf("# Pipeline job\nRun: %s\nJob: %s\nAttempt: %d\nDefinition: %s (%s, compiler %s)\nIssue snapshot: %s\n%s\n\nSquad policy:\n%s\n\nInstructions:\n%s\n\nPinned upstream artifacts:\n%s\n\nComplete this job yourself. The server owns scheduling and parent issue status. Submit a structured result before finishing using `multica pipeline job report %s %s --attempt %d --result succeeded|failed|blocked --report-file <file> --idempotency-key <key>`; publish exact artifact paths using attachment IDs from this task. A normal process exit without a result blocks this job. Human decisions use the approval API.\n", r.ID, j.Node.ID, len(j.Attempts)+1, r.DefinitionID, r.Plan.Kind, r.Plan.CompilerVersion, r.IssueTitle, r.IssueDescription, r.Policy, j.Node.Instructions, b, r.ID, j.Node.ID, len(j.Attempts)+1)
+	return fmt.Sprintf("# Pipeline job\nRun: %s\nJob: %s\nAttempt: %d\nDefinition: %s (%s, compiler %s)\nIssue snapshot: %s\n%s\n\nSquad policy:\n%s\n\nInstructions:\n%s\n\nPinned upstream artifacts:\n%s\n\nComplete this job yourself. The server owns scheduling and parent issue status. Submit a structured result before finishing using `multica pipeline job report %s %s --attempt %d --result succeeded|failed|blocked --report-file <file> --idempotency-key <key>`; publish exact artifact paths using attachment IDs from this task, an accessible repository file pinned by SHA, or a project Markdown document_id and document_version. A normal process exit without a result blocks this job. Human decisions use the approval API.\n", r.ID, j.Node.ID, len(j.Attempts)+1, r.DefinitionID, r.Plan.Kind, r.Plan.CompilerVersion, r.IssueTitle, r.IssueDescription, r.Policy, j.Node.Instructions, b, r.ID, j.Node.ID, len(j.Attempts)+1)
 }

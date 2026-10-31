@@ -4,6 +4,8 @@ Date: 2026-10-31. Base: `937d91637b1c36943b1e64edf4fa0b0f891d1089` on `main`.
 The approved prototype attachment's SHA-256 was verified as
 `51e2d434bf910c166d05f4f2606bc5903f27b9fc4f5bee97d8f405ea9a0125f9`.
 The prototype was not used as an execution or conversion implementation.
+Scope: the saved v1.4 project specification (document version 3), including
+§15's Markdown body links, source task grouping and structured provenance.
 
 ## Delivered contract
 
@@ -20,29 +22,37 @@ state transitions are atomic. Definitions remain immutable. Source hashes,
 compiler versions and run snapshots remain fixed across default-version and
 mode changes.
 
+The v1.4 addition reuses the existing Markdown/revision model. Task relations,
+pinned source records and operation receipts support append-only collection
+into existing or new documents. No independent link resource kind was added.
+The core contract includes grouping/search, reverse lookup, source metadata,
+fixed revision reads, association and unlink, with CLI equivalents.
+
 ## Checks actually run
 
 | Check | Result |
 | --- | --- |
 | `make sqlc` | Passed; generated row projections and pipeline queries committed |
-| Migrations 601–608 through the checkout's managed environment | Passed in isolated `multica_multica_94`; concurrent-index retry hooks registered |
+| Migrations 601–612 through the checkout's managed environment | Passed in isolated `multica_multica_94`; concurrent-index retry hooks registered |
 | `go build ./cmd/server ./cmd/multica` | Passed |
 | Focused Go checks with `-race`, across compiler, service, handler, real HTTP router, CLI, GitHub adapter and migrator | Passed; latest run also includes legacy squad/rerun/wakeup cases |
-| Full handler suite with `-race` after manifest fixes | Passed (149.511 seconds); subsequent full suite handler pass was 173.499 seconds |
+| Full handler suite with `-race`, including v1.4 | Passed: 165.330 seconds in the final broad Go run |
 | Full service, server-command, CLI-command, migrator and GitHub adapter suites in the broad Go run | Passed |
+| Guarded `bash scripts/test-go.sh --race --only agent` | Passed separately: `pkg/agent`, 179.367 seconds; real installed agent CLIs remain blocked |
 | `pnpm --filter @multica/core typecheck` | Passed |
-| `pnpm --filter @multica/core test` | Passed: 186 files, 2448 tests |
-| Latest focused core schema/realtime checks | Passed: 8 files, 106 tests, including reconnect invalidation |
+| `pnpm --filter @multica/core test` | Passed: 187 files, 2456 tests |
+| Focused core document schema/draft checks | Passed: 3 files, 19 tests; includes final mutation cache invalidation change |
+| Focused core pipeline/realtime checks | Passed: 8 files, 106 tests, including reconnect invalidation |
 | `pnpm --filter @multica/core lint` | No errors; two existing warnings in `platform/core-provider.tsx` |
 | `git diff --check` | Passed |
 
-The final focused Go check used the existing installed-agent CLI guard:
+Focused Go checks use the existing installed-agent CLI guard:
 
 ```sh
 bash ../scripts/go-test-with-agent-cli-guard.sh -- go test -race \
   ./internal/handler ./internal/service ./cmd/server ./cmd/multica \
   ./internal/pipeline ./internal/integrations/ghsnapshot ./cmd/migrate \
-  -run 'TestPipeline|TestRerun|TestSquad|TestIssueWakeupSquad|TestEveryConcurrent|TestConcurrentIndex|TestRepositoryArtifact|TestDialect|TestCompiler|TestStageBarrier|TestShipped|TestFailureCannot|TestResultsAnd|TestApprovalRevision|TestRetryKeeps|TestFailureRouting|TestCancellationDoesNotRun' \
+  -run 'TestDocument|TestProjectDocument|TestPipeline|TestRerun|TestSquad|TestIssueWakeupSquad|TestEveryConcurrent|TestConcurrentIndex|TestRepositoryArtifact|TestDialect|TestCompiler|TestStageBarrier|TestShipped|TestFailureCannot|TestResultsAnd|TestApprovalRevision|TestRetryKeeps|TestFailureRouting|TestCancellationDoesNotRun' \
   -count=1
 ```
 
@@ -75,27 +85,42 @@ or real GitHub installation contents request was used.
 | JSON errors preserve API error codes; querying a failed run succeeds | `cmd_pipeline_test.go`: source and error contract tests |
 | Malformed shared responses fail closed; missing or future enums stay readable | `packages/core/pipelines/schema.test.ts` |
 
+v1.4 backend/core/CLI evidence (the visual portions of A38–A44 remain for YANF-8):
+
+| Acceptance scope | Canonical evidence |
+| --- | --- |
+| A38: stable task groups, identifier/title search, rename and unassociated legacy documents | `TestDocumentAssociationIdempotencyGroupingAndUnlink` |
+| A39: standard Markdown links and descriptions, no link document/resource kind | `TestDocumentAssociationIdempotencyGroupingAndUnlink`, `TestDocumentAssociationPreservesExistingMarkdownLinks`, authenticated HTTP test |
+| A40: idempotent existing/new collection, human prose preservation, same document referenced by multiple tasks | `TestDocumentAssociationIdempotencyGroupingAndUnlink`, `TestDocumentAssociationCreateReplayAndConflicts` |
+| A41: downstream input, approval and download stay on document revision 1 after a version 2 save | `TestDocumentAssociationPinnedPipelineArtifactAndDocumentRevision` |
+| A42: foreign project/workspace, missing project/content, local paths and unpublished declarations fail | `TestDocumentAssociationScopeAndUnavailableSources`, `TestDocumentAssociationPinnedPipelineArtifactAndDocumentRevision`; existing attachment/repository publication authorization tests |
+| A43: association, task query, source query, unlink and fixed revision CLI/API | `TestDocumentAssociationAuthenticatedHTTP`, `TestDocumentAssociationCLIContract`, `TestDocumentReferencesUnlinkAndPinnedRevisionCLI` |
+| A44: competing appends return latest without overwriting or partial source writes; drafts survive conflicts | `TestDocumentAssociationCompetingAppendsPreserveDraft`, `TestDocumentAssociationCreateReplayAndConflicts`, core `documents/associations.test.ts` |
+| Source identities and project deletion cleanup | `TestDocumentAssociationAttachmentRepositoryAndCleanup`; full workspace deletion manifest suite |
+
 ## Check that is not green
 
-`make test` was attempted twice and is **not reported as passing**. After fixing
-the new migration cleanup registration and workspace deletion manifest, its
-remaining failure was in the unchanged `internal/daemon/repocache` package.
-Concurrent repository checkout tests reported
+`make test` is **not reported as passing**. In the final run, after the v1.4
+code was fixed, the remaining failure was in the unchanged
+`internal/daemon/repocache` package. The full handler, service, server-command,
+CLI-command, migrator and GitHub adapter suites passed. Repeating the full
+command outside the sandbox still left concurrent checkout tests reporting
 `stop process tree: operation not permitted`, including
-`TestCreateIsolatedCheckoutImportsFetchedTipFromShallowCache`,
-`TestReconcileCoAuthoredByHookInCheckoutMigratesReleasedHook`,
+`TestCreateWorktree`, `TestRepeatedCheckoutOnTaskBranchIsNoop`,
 `TestRepeatedCheckoutKeepsLocalWork` and
-`TestRepeatedCheckoutOnTaskBranchIsNoop`.
+`TestFreshMigrationCarriesUnpushedBranch`.
 
 The unchanged base commit's complete repocache package passed independently
 with `-race` (35.539 seconds); individual failing checkout tests also passed
 when rerun independently. This does not establish that the baseline full suite
 passes, or that the remaining concurrent failure is resolved. No repocache
-production code was changed. The first broad run also had a WeCom timing-budget
-failure; its independent rerun and the second broad run passed.
+production code was changed. An earlier intermediate run also encountered
+unchanged daemon checkout tests with the same EPERM; the final full daemon
+suite passed (43.043 seconds).
 
 Because the regular-package half of `make test` failed, its later `pkg/agent`
-half did not run. The new fake-executor evidence does not depend on that half.
+half did not run in that command. It was then run separately through the same
+guard and passed with `-race` (179.367 seconds).
 
 ## Deliberate capability boundaries and acceptance work
 
@@ -108,9 +133,10 @@ publication currently supports GitHub through workspace-bound installations;
 an unavailable adapter/reference blocks required content rather than claiming
 delivery.
 
-The API and CLI are ready for parent-task review. The separate UI stage still
-needs to implement the approved desktop/mobile interactions using these real
-interfaces and to run its own accessibility/layout/end-to-end acceptance.
+The API and CLI, including v1.4 §15, are ready for parent-task review. The
+separate UI stage still needs to implement the approved pipeline interactions,
+obtain approval for the added document area, consume these real interfaces and
+run desktop/mobile accessibility/layout/end-to-end acceptance.
 Production runtime behavior, actual installation content permissions and
 production restart/deployment remain unverified. No merge, deployment or squad
 mode change was performed in the user's workspace.

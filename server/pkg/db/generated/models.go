@@ -1421,6 +1421,26 @@ type ProjectDocument struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ProjectDocumentIssue struct {
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	ProjectID       pgtype.UUID        `json:"project_id"`
+	DocumentID      pgtype.UUID        `json:"document_id"`
+	IssueID         pgtype.UUID        `json:"issue_id"`
+	DocumentVersion int32              `json:"document_version"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+type ProjectDocumentOperation struct {
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	ProjectID       pgtype.UUID `json:"project_id"`
+	IssueID         pgtype.UUID `json:"issue_id"`
+	IdempotencyKey  string      `json:"idempotency_key"`
+	RequestHash     string      `json:"request_hash"`
+	DocumentID      pgtype.UUID `json:"document_id"`
+	DocumentVersion int32       `json:"document_version"`
+	Inserted        bool        `json:"inserted"`
+}
+
 type ProjectDocumentRevision struct {
 	ID          pgtype.UUID        `json:"id"`
 	DocumentID  pgtype.UUID        `json:"document_id"`
@@ -1434,6 +1454,17 @@ type ProjectDocumentRevision struct {
 	AuthorID    pgtype.UUID        `json:"author_id"`
 	AuthorName  string             `json:"author_name"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type ProjectDocumentSource struct {
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	ProjectID       pgtype.UUID        `json:"project_id"`
+	DocumentID      pgtype.UUID        `json:"document_id"`
+	IssueID         pgtype.UUID        `json:"issue_id"`
+	SourceKey       string             `json:"source_key"`
+	Source          []byte             `json:"source"`
+	DocumentVersion int32              `json:"document_version"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
 type ProjectResource struct {

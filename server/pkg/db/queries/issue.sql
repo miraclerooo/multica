@@ -478,6 +478,12 @@ LIMIT 1;
 WITH target AS (
     SELECT issue.id FROM issue WHERE issue.id = $1 AND issue.workspace_id = $2
 ),
+cleared_document_issues AS (
+ DELETE FROM project_document_issue WHERE issue_id IN (SELECT target.id FROM target) AND workspace_id=$2
+),
+cleared_document_operations AS (
+ DELETE FROM project_document_operation WHERE issue_id IN (SELECT target.id FROM target) AND workspace_id=$2
+),
 cleared_pipeline_runs AS (
  DELETE FROM pipeline_run WHERE issue_id IN (SELECT target.id FROM target) AND workspace_id=$2
 ),

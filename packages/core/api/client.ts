@@ -1,3 +1,4 @@
+import { DocumentCollectionSchema, DocumentSourcesSchema, parseAssociationResponse, type AssociateDocumentInput, type DocumentListInput, type DocumentCollection, type DocumentSources } from "../documents/associations";
 import * as pipelines from "../pipelines/schema";
 import type { ZodType } from "zod";
 import { DirectoryBrowseRequestSchema, MALFORMED_DIRECTORY_REQUEST, type DirectoryBrowseInput, type DirectoryBrowseRequest } from "../runtimes/directories-schema";
@@ -4140,6 +4141,40 @@ export class ApiClient {
   async listProjectDocuments(projectId: string) {
     const raw = await this.fetch<unknown>(`/api/projects/${projectId}/documents`);
     return parseWithFallback(raw, DocumentListSchema, { documents: [] as ProjectDocument[], total: 0 }, { endpoint: "GET project documents" });
+  }
+
+  async listProjectDocumentGroups(projectId: string, filters: DocumentListInput = {}) {
+    const query = new URLSearchParams();
+    if (filters.issue_id) query.set("issue_id", filters.issue_id);
+    if (filters.q) query.set("q", filters.q);
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/documents?${query}`);
+    return parseWithFallback<DocumentCollection>(raw, DocumentCollectionSchema,
+      { documents: [], total: 0, groups: [], references: [] }, { endpoint: "GET project document groups" });
+  }
+
+  async listIssueDocuments(issueId: string) {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/documents`);
+    return parseWithFallback<DocumentCollection>(raw, DocumentCollectionSchema,
+      { documents: [], total: 0, groups: [], references: [] }, { endpoint: "GET issue documents" });
+  }
+
+  async associateIssueDocument(issueId: string, input: AssociateDocumentInput) {
+    return parseAssociationResponse(await this.fetch<unknown>(`/api/issues/${issueId}/documents`, {
+      method: "POST", body: JSON.stringify(input),
+    }));
+  }
+
+  async unlinkIssueDocument(issueId: string, documentId: string): Promise<void> {
+    await this.fetch(`/api/issues/${issueId}/documents/${documentId}`, { method: "DELETE" });
+  }
+
+  async listProjectDocumentSources(projectId: string, id: string) {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/documents/${id}/sources`);
+    return parseWithFallback<DocumentSources>(raw, DocumentSourcesSchema, { sources: [], total: 0 }, { endpoint: "GET document sources" });
+  }
+
+  async getProjectDocumentRevision(projectId: string, id: string, version: number) {
+    return parseDocumentResponse(await this.fetch<unknown>(`/api/projects/${projectId}/documents/${id}/revisions/${version}`), "GET document revision");
   }
 
   async getProjectDocument(projectId: string, id: string) {

@@ -33,6 +33,7 @@ export const PipelineDefinitionSchema = z.object({
 }).loose();
 export const PipelineArtifactSchema = z.object({
   id: z.string(), job_id: z.string(), attempt: z.number(), path: z.string(), status: z.string(),
+  document_id: z.string().optional(), document_version: z.number().int().positive().optional(),
   attachment_id: z.string().optional(), repo: z.string().optional(), ref: z.string().optional(), sha: z.string().optional(), reason: z.string().optional(),
 }).loose();
 export const PipelineReportSchema = z.object({
@@ -80,5 +81,5 @@ export interface PipelineDefinitionInput extends PipelineSourceInput { squad_id:
 export interface PipelineRunInput { issue_id: string; squad_id: string; definition_id?: string; idempotency_key: string }
 export interface PipelineRevisionInput { expected_revision: number; idempotency_key: string }
 export interface PipelineDecisionInput extends PipelineRevisionInput { decision: "approve" | "reject"; reason?: string }
-export interface PipelineReportInput { attempt: number; result: "succeeded" | "failed" | "blocked"; report: string; artifacts: { path: string; attachment_id?: string; repo?: string; ref?: string; sha?: string }[]; idempotency_key: string }
+export interface PipelineReportInput { attempt: number; result: "succeeded" | "failed" | "blocked"; report: string; artifacts: { path: string; attachment_id?: string; document_id?: string; document_version?: number; repo?: string; ref?: string; sha?: string }[]; idempotency_key: string }
 export interface PipelineListInput { issue_id?: string; squad_id?: string; job_id?: string; limit?: number; offset?: number }

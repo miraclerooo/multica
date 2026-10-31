@@ -71,7 +71,7 @@ func Capabilities() map[string]any {
 	return map[string]any{
 		"schema_version": 1, "compiler_version": CompilerVersion,
 		"kinds":    []string{"gitlab_yaml", "hermes_yaml"},
-		"features": map[string]bool{"custom_roles": true, "custom_nodes": true, "gitlab_dag": true, "hermes_forward_chain": true, "manual_gates": true, "on_failure": true, "allow_failure": true, "retry": true, "attachment_artifacts": true, "repository_artifacts": true, "dialect_conversion": false, "conditional_routes": false, "rollback": false, "named_outputs": false, "artifact_globs": false, "run_only": false},
+		"features": map[string]bool{"custom_roles": true, "custom_nodes": true, "gitlab_dag": true, "hermes_forward_chain": true, "manual_gates": true, "on_failure": true, "allow_failure": true, "retry": true, "attachment_artifacts": true, "repository_artifacts": true, "document_artifacts": true, "markdown_document_associations": true, "dialect_conversion": false, "conditional_routes": false, "rollback": false, "named_outputs": false, "artifact_globs": false, "run_only": false},
 		"limits":   map[string]int{"source_bytes": 262144, "nodes": 256, "retry": 10},
 	}
 }

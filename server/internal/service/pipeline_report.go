@@ -57,8 +57,27 @@ func (s *PipelineService) Report(ctx context.Context, row db.PipelineRun, id str
 			artifact.Attempt = attempt
 			artifact.Status = "reported"
 			artifact.Reason = "artifact_unavailable"
-			if artifact.AttachmentID != "" && artifact.Repo != "" {
+			sources := 0
+			for _, ref := range []string{artifact.AttachmentID, artifact.Repo, artifact.DocumentID} {
+				if ref != "" {
+					sources++
+				}
+			}
+			if sources > 1 {
 				return pipeline.Fail("invalid_artifact", "choose one artifact source")
+			}
+			if artifact.DocumentID != "" {
+				docID, e := util.ParseUUID(artifact.DocumentID)
+				projectID, projectErr := util.ParseUUID(run.ProjectID)
+				if e != nil || artifact.DocumentVersion < 1 {
+					return pipeline.Fail("invalid_artifact", "document_id and a positive document_version are required")
+				}
+				if projectErr == nil {
+					_, e = q.GetProjectDocumentRevision(ctx, db.GetProjectDocumentRevisionParams{DocumentID: docID, WorkspaceID: row.WorkspaceID, ProjectID: projectID, Version: artifact.DocumentVersion})
+					if e == nil {
+						artifact.Status, artifact.Reason = "accessible", ""
+					}
+				}
 			}
 			if artifact.Repo != "" && s.RepositoryFile != nil {
 				ref := artifact.SHA
@@ -101,6 +120,18 @@ func (s *PipelineService) RefreshArtifacts(ctx context.Context, q *db.Queries, r
 			}
 			for n := range a.Report.Artifacts {
 				artifact := &a.Report.Artifacts[n]
+				if artifact.DocumentID != "" {
+					docID, docErr := util.ParseUUID(artifact.DocumentID)
+					projectID, projectErr := util.ParseUUID(run.ProjectID)
+					artifact.Status, artifact.Reason = "missing", "artifact_unavailable"
+					if docErr == nil && projectErr == nil {
+						_, err := q.GetProjectDocumentRevision(ctx, db.GetProjectDocumentRevisionParams{DocumentID: docID, WorkspaceID: pipelineUUID(run.WorkspaceID), ProjectID: projectID, Version: artifact.DocumentVersion})
+						if err == nil {
+							artifact.Status, artifact.Reason = "accessible", ""
+						}
+					}
+					continue
+				}
 				if artifact.AttachmentID == "" {
 					if artifact.Repo != "" && artifact.SHA != "" && s.RepositoryFile != nil {
 						sha, _, err := s.RepositoryFile(ctx, run.WorkspaceID, run.CreatorID, artifact.Repo, artifact.Path, artifact.SHA)

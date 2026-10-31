@@ -1,7 +1,8 @@
 # Squad pipeline API and CLI (YANF-7)
 
-This change supplies the server and shared core contract for the approved v1.2
-design. The pipeline UI is a separate delivery. Both dialects are executable:
+This change supplies the server, shared core and CLI contract for v1.4
+(v1.2 execution semantics plus task-associated Markdown documents). The pipeline
+and document UIs are separate deliveries. Both dialects are executable:
 the engine parses the original document, stores its bytes and SHA-256, and
 freezes the compiled plan, compiler version, bindings, squad policy, issue
 title/description, project and workflow step in each run. No conversion or
@@ -81,7 +82,7 @@ do not require any special squad role.
 | POST `/api/pipeline-runs/:id/jobs/:job/report` | `{attempt, result, report, artifacts, idempotency_key}` |
 | POST `/api/pipeline-runs/:id/jobs/:job/decisions` | `{expected_revision, decision: approve\|reject, reason?, idempotency_key}` |
 | GET `/api/pipeline-runs/:id/artifacts?job_id=...` | Declaration and publication page |
-| GET `/api/pipeline-runs/:id/artifact-content?artifact_id=...` | Authenticated content read; existing attachment delivery or pinned repository read |
+| GET `/api/pipeline-runs/:id/artifact-content?artifact_id=...` | Authenticated attachment, pinned repository or fixed Markdown revision read |
 
 Collection pages are `{items, limit, offset}`; limit defaults to 50, maximum
 100. Read a subsequent page by advancing offset by the number of returned
@@ -124,6 +125,10 @@ An artifact report uses exactly one of:
 {"path":"reports/summary.md","repo":"owner/repository","ref":"branch-or-commit"}
 ```
 
+```json
+{"path":"reports/summary.md","document_id":"<project document UUID>","document_version":3}
+```
+
 Attachments must belong to this issue and this exact task/agent, with readable
 stored content. GitHub repository files are read through an installation bound
 to this workspace. The branch/ref resolves to a commit SHA at publication;
@@ -133,6 +138,9 @@ required consumption. Other Git providers are not supported by this artifact
 adapter. Local paths, a text `ARTIFACT:`/`REF:` claim, and YAML declarations do
 not publish content. CLI callers submit the structured reference array through
 `--artifacts-file`; the existing line protocol remains useful report text.
+Markdown references must name an existing immutable revision in the run's
+project. Downstream attempts, approvals and content downloads keep this exact
+revision even if somebody later saves a new document body or title.
 
 Publication states are `declared`, `reported`, `accessible`, `missing`. The
 catalog never invents download URLs. Attempts retain previous reports, and
@@ -220,6 +228,118 @@ multica pipeline run cancel <run-id> --reason "Stop" --idempotency-key <key>
 Artifact IDs are copied from the catalog. Downloads refuse to overwrite a
 local file. Job logs are bounded reads; streaming/follow is not implemented.
 
+## Task-associated Markdown documents (v1.4 §15)
+
+The existing `spec` / `document` model remains Markdown. There is no link
+document/resource kind or separate link-details object. An association adds
+ordinary `[label](<URL>)` text to the Markdown body and records structured
+provenance alongside it. A document can belong to several source task groups;
+each group is keyed by the task UUID and displays its current identifier,
+title and document count. Renaming a task never changes its group identity.
+Documents without a live same-project association remain Project materials.
+
+| Method / path | Contract |
+| --- | --- |
+| GET `/api/projects/:project/documents?q=...&issue_id=...` | Existing flat `documents,total`, plus `groups` with `issue_id` (null for project materials), `identifier,title,count,documents`; search matches task identifier/title and Markdown title/body |
+| GET `/api/issues/:issue/documents` | Current documents, groups and reverse `references` containing `document_id,issue_id,document_version,sources` |
+| POST `/api/issues/:issue/documents` | Associate existing or new Markdown and optionally append one validated source; returns `document,inserted,replayed,linked` |
+| DELETE `/api/issues/:issue/documents/:document` | 204; removes only this relationship, preserving body, sources, artifacts and revision history |
+| GET `/api/projects/:project/documents/:document/sources` | Source records with source key, insertion revision and full pinned provenance |
+| GET `/api/projects/:project/documents/:document/revisions/:version` | Immutable document snapshot |
+| GET `/api/projects/:project/documents/:document/revisions/:version/content` | Authenticated `text/markdown` content for that revision |
+
+For an existing Markdown document:
+
+```json
+{
+  "document_id": "<existing Markdown UUID>",
+  "base_version": 4,
+  "idempotency_key": "collect-delivery-42",
+  "label": "Research result",
+  "description": "Evidence and decisions",
+  "source": {
+    "kind": "pipeline_artifact",
+    "run_id": "<run UUID>",
+    "job_id": "gather_sources",
+    "attempt": 2,
+    "path": "reports/research.md"
+  }
+}
+```
+
+For a new document, replace `document_id` with
+`"create_document":{"title":"Task findings","kind":"document","body":"Human introduction"}`
+and use `base_version:0`. Kind defaults to `document`; an omitted body for a
+new `spec` uses the existing requirements template. Omitting `source` records
+only a relationship, which lets another task reuse the document's ID without
+copying its body. Existing targets require a positive explicit base version.
+
+Supported source objects:
+
+| Kind | Required source fields and validation |
+| --- | --- |
+| `pipeline_artifact` | `run_id,job_id,attempt,path`; exact reported artifact of this issue/project, with readable content; YAML declarations alone are rejected |
+| `attachment` | `attachment_id`; stored readable attachment on this issue in this workspace |
+| `document` | `document_id,document_version`; actual saved revision in the same project |
+| `repository` | `repo,sha,path`; accessible regular GitHub file at an exact SHA through this workspace's installation |
+| `url` | `url`; HTTP(S) with a host, no embedded credentials/control characters; explicitly mutable and content unverified, never fetched or represented as verified content |
+
+Local runtime paths, unpublished outputs, unavailable attachments/revisions,
+mixed source identities and foreign project targets are refused. Issues
+without a project return `409 issue_project_required`; there is no implicit
+project assignment. Existing workspace membership, document author and source
+access rules apply. Pipeline source records retain source issue/run/job/attempt,
+task ID and the pinned artifact reference. `verified` describes validation
+when the link was collected; content access always rechecks current permissions
+and availability. Internal content links include the workspace ID and use the
+configured public API origin, or a same-origin API path when it is unset.
+
+One transaction serializes with existing document saves, appends without
+rewriting human paragraphs, saves a normal revision and records the relation,
+source and operation receipt. Repeating a source in the same document does
+not append it again, including when the human body already has that Markdown
+link. Code samples containing link syntax do not count as actual body links.
+Repeated creation with the same idempotency key returns the original document
+and revision; clients must reuse the key on retries. Reusing it for different
+input returns `409 idempotency_conflict`. A receipt replay after unlink reports
+`linked:false` and does not resurrect the relationship. Use a new key to
+associate again. Source provenance remains alongside the retained body link.
+
+A competing body edit returns `409 document_version_conflict` with `latest`.
+No source, relationship or revision from the rejected append is committed.
+Keep the local draft, compare against `latest`, then retry with an explicit
+updated base version; the server never silently merges or overwrites text.
+Editing/removing a body link is an ordinary content revision and does not
+implicitly unlink a task.
+
+CLI equivalents (all support machine-readable JSON):
+
+```sh
+multica project document list <project> --issue PROJ-42 --search research
+multica project document associate PROJ-42 --document <document-uuid> \
+  --base-version 4 --source-file source.json --label 'Research result' \
+  --description 'Evidence and decisions' --idempotency-key collect-delivery-42
+multica project document associate PROJ-42 --new-title 'Task findings' \
+  --body-file introduction.md --source-file source.json --idempotency-key create-task-notes
+multica project document references PROJ-42
+multica project document sources <project> <document-uuid>
+multica project document get <project> <document-uuid> --version 3 --output markdown
+multica project document unlink PROJ-42 <document-uuid>
+```
+
+`source.json` contains one source object from the table above. Labels and
+descriptions are escaped as Markdown text. CLI conflict errors retain the
+structured API body and nonzero exit status.
+
+The headless `@multica/core/documents` API exports the association/source/group
+schemas, typed inputs, client methods, query options and mutations. Every
+collection is schema-checked and every write acknowledgement must validate.
+Workspace/project/issue/revision query keys remain separate. Association
+mutations retain editor drafts on conflict and never adopt an older replay
+over a newer cached snapshot. Document events invalidate project and source
+queries. Desktop/mobile document UI and its revised prototype approval remain
+the separate YANF-8 scope.
+
 ## Shared core and UI handoff
 
 Import `@multica/core/pipelines` for schemas, request types, query options and
@@ -256,13 +376,18 @@ this PR.
 ## Migration and verification
 
 Migrations 601–608 add default markdown mode, squad revisions, immutable
-definitions, run aggregates and task provenance. There are no new foreign keys.
+definitions, run aggregates and task provenance. Migrations 609–612 add
+document/task relations, pinned source records and idempotency receipts.
+There are no new foreign keys.
 Every new index has its own concurrent migration. Existing clients can keep
 editing ordinary squad fields. Reverting a default affects future triggers;
 cancel live runs explicitly before rolling the product server back. Historical
 versions/attempts survive retries and mode changes. Explicit issue/workspace
 deletion cleans up its pipeline records through the existing scoped delete
 queries. `make sqlc` regenerates all affected row projections.
+Project/workspace deletion also cleans the document relation tables. Issue
+deletion removes its current associations/receipts; provenance of links kept
+inside existing documents remains historical until project/workspace deletion.
 
 Canonical evidence lives beside the implementation:
 
@@ -278,6 +403,14 @@ Canonical evidence lives beside the implementation:
   failed-run query exit behavior through a fake HTTP service.
 - `packages/core/pipelines/schema.test.ts`: malformed responses and legacy or
   unknown enums fail safely at the shared API boundary.
+- `internal/handler/project_document_issue_test.go`: grouping/search, document
+  reuse, idempotent appends/creation, optimistic conflicts, unlink preservation,
+  unavailable sources and pinned document input/approval evidence.
+- `cmd/server/document_association_integration_test.go`: authenticated real
+  HTTP association, search, source and immutable content routes.
+- `cmd/multica/cmd_document_association_test.go` and
+  `packages/core/documents/associations.test.ts`: JSON/source/conflict contracts,
+  malformed responses, draft retention and workspace/revision query identity.
 
 Use `make test` for the Go suite, including the existing agent CLI guard, and
 the core package typecheck/tests/lint for the shared contract. Real runtimes,

@@ -17,6 +17,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/integrations/ghsnapshot"
 	"github.com/multica-ai/multica/server/internal/pipeline"
 	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -584,9 +585,26 @@ func (h *Handler) DownloadPipelineArtifact(w http.ResponseWriter, r *http.Reques
 		writePipelineError(w, err)
 		return
 	}
+	h.Pipelines.RefreshArtifacts(r.Context(), h.Queries, &run)
 	for _, artifact := range run.Artifacts() {
-		if artifact.ID != r.URL.Query().Get("artifact_id") {
+		if artifact.ID != r.URL.Query().Get("artifact_id") || artifact.Status != "accessible" {
 			continue
+		}
+		if artifact.DocumentID != "" && artifact.Status == "accessible" {
+			docID, docErr := util.ParseUUID(artifact.DocumentID)
+			projectID, projectErr := util.ParseUUID(run.ProjectID)
+			if docErr != nil || projectErr != nil {
+				break
+			}
+			rev, e := h.Queries.GetProjectDocumentRevision(r.Context(), db.GetProjectDocumentRevisionParams{DocumentID: docID, WorkspaceID: row.WorkspaceID, ProjectID: projectID, Version: artifact.DocumentVersion})
+			if e != nil {
+				break
+			}
+			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.WriteHeader(200)
+			_, _ = w.Write([]byte(rev.Body))
+			return
 		}
 		if artifact.AttachmentID != "" {
 			copy := r.Clone(r.Context())
