@@ -7,6 +7,19 @@ The prototype was not used as an execution or conversion implementation.
 Scope: the saved v1.4 project specification (document version 3), including
 §15's Markdown body links, source task grouping and structured provenance.
 
+Both prototype approvals are satisfied. The pipeline approval remains comment
+`01a1922c-62ba-79e5-8ca4-9ddac9828a60`. The Markdown document area was approved
+by Admin at 2026-10-31 15:09:12 UTC in comment
+`01a19281-f439-7a9f-ac11-f7031764e5c9`. Its reviewed HTML is attachment
+`01a19276-4fbc-7782-ae9f-cd6e0d2a6b9e`, with review SHA-256
+`b24539c4b792de2229c9742ca1a2c1f5809c3810fff7f9a68086ffc358273210`.
+The saved project delivery index (document
+`b7951b67-2f62-4378-90e8-3e5c7204ea58`, version 4) records that the raw download
+hash is `70075154ac4459e3c0c6f0fb631cf960b87b8890fdc1156aae5e06e6f35776ff`
+because of an additional download script. These identify the same reviewed
+design, not a new version. This handoff uses that approval record and does not
+request or perform a new design review.
+
 ## Delivered contract
 
 See `docs/pipelines/README.md` for exact API routes, JSON shapes, dialect
@@ -45,6 +58,22 @@ fixed revision reads, association and unlink, with CLI equivalents.
 | Focused core pipeline/realtime checks | Passed: 8 files, 106 tests, including reconnect invalidation |
 | `pnpm --filter @multica/core lint` | No errors; two existing warnings in `platform/core-provider.tsx` |
 | `git diff --check` | Passed |
+
+The v1.4 coverage recheck uses implementation commit
+`c5e5f16f99a15737e3af08e0d8cc335d46576641`; the subsequent change corrects
+approval metadata and this verification record only. No engine, API, core or
+CLI implementation is repeated or replaced.
+
+| v1.4 recheck | Actual result |
+| --- | --- |
+| Guarded `go test -race -v ./internal/handler ./cmd/server ./cmd/multica -run 'TestDocument\|TestProjectDocument' -count=1` | Passed: 19 top-level tests; handler 3.213s, authenticated HTTP router 1.940s, CLI 1.662s; PostgreSQL tests executed without skips |
+| `pnpm --filter @multica/core exec vitest run documents/associations.test.ts documents/schema.test.ts documents/drafts.test.ts` | Passed: 3 files, 19 tests |
+| Scope/contract inspection | Spec v1.4 saved version 3, delivery index version 4, source/route/core/CLI and A38–A44 evidence below agree; no independent link content model |
+
+The recheck exercises real database revisions, source relations and HTTP
+authorization with fake executors. It does not re-run the full suite or treat
+the hand-maintained delivery index or prototype interactions as product test
+evidence. The full-suite exception below remains unresolved.
 
 Focused Go checks use the existing installed-agent CLI guard:
 
@@ -134,9 +163,10 @@ an unavailable adapter/reference blocks required content rather than claiming
 delivery.
 
 The API and CLI, including v1.4 §15, are ready for parent-task review. The
-separate UI stage still needs to implement the approved pipeline interactions,
-obtain approval for the added document area, consume these real interfaces and
-run desktop/mobile accessibility/layout/end-to-end acceptance.
+separate UI stage needs to implement both approved prototypes using these real
+interfaces and run desktop/mobile accessibility/layout/end-to-end acceptance.
+The parent task owns promotion of YANF-8; neither prototype needs another
+approval, and this delivery does not start that stage.
 Production runtime behavior, actual installation content permissions and
 production restart/deployment remain unverified. No merge, deployment or squad
 mode change was performed in the user's workspace.

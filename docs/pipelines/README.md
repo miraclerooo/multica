@@ -337,8 +337,9 @@ collection is schema-checked and every write acknowledgement must validate.
 Workspace/project/issue/revision query keys remain separate. Association
 mutations retain editor drafts on conflict and never adopt an older replay
 over a newer cached snapshot. Document events invalidate project and source
-queries. Desktop/mobile document UI and its revised prototype approval remain
-the separate YANF-8 scope.
+queries. Desktop/mobile document UI remains the separate YANF-8 scope. Both the
+pipeline and Markdown-document prototypes have been approved; product UI
+implementation and acceptance still follow the parent task's stage handoff.
 
 ## Shared core and UI handoff
 
