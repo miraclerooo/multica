@@ -113,8 +113,9 @@ func main() {
 		return
 	}
 	cli.CleanupStaleUpdateArtifacts()
-	if err := rootCmd.Execute(); err != nil {
-		if err != errSilent {
+	cmd, err := rootCmd.ExecuteC()
+	if err != nil {
+		if err != errSilent && !printCommandJSONError(cmd, err, os.Args[1:]) {
 			fmt.Fprintln(os.Stderr, cli.FormatError(err, debugFlag))
 		}
 		os.Exit(cli.ExitCodeFor(err))

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -20,7 +19,7 @@ import (
 func init() { rootCmd.AddCommand(newPipelineCommand()) }
 
 func newPipelineCommand() *cobra.Command {
-	root := &cobra.Command{Use: "pipeline", Short: "Compile, version and run squad pipelines"}
+	root := &cobra.Command{Use: "pipeline", Short: "Compile, version and run squad pipelines", Annotations: map[string]string{jsonErrorCodeAnnotation: "pipeline_command_failed"}}
 	root.PersistentFlags().String("output", "json", "Output format: json (or yaml for definition get)")
 	add := func(parent *cobra.Command, use, op string, n int) *cobra.Command {
 		cmd := &cobra.Command{Use: use, Short: op, Args: exactArgs(n), RunE: func(cmd *cobra.Command, args []string) error {
@@ -319,19 +318,8 @@ func downloadPipelineArtifact(ctx context.Context, cmd *cobra.Command, client *c
 }
 
 func pipelineCommandError(cmd *cobra.Command, err error) error {
-	if err == nil || pipelineFlag(cmd, "output") != "json" {
-		return err
+	if printCommandJSONError(cmd, err, os.Args[1:]) {
+		return errSilent
 	}
-	var httpError *cli.HTTPError
-	if errors.As(err, &httpError) {
-		var body map[string]any
-		if json.Unmarshal([]byte(httpError.Body), &body) == nil {
-			if _, ok := body["code"]; ok {
-				_ = cli.PrintJSON(cmd.ErrOrStderr(), body)
-				return errSilent
-			}
-		}
-	}
-	_ = cli.PrintJSON(cmd.ErrOrStderr(), map[string]any{"code": "pipeline_command_failed", "error": err.Error()})
-	return errSilent
+	return err
 }

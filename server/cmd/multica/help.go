@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"text/template"
 
@@ -23,6 +24,9 @@ var errSilent = fmt.Errorf("")
 func exactArgs(n int) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		if len(args) != n {
+			if _, enabled := commandJSONErrorCode(cmd, os.Args[1:]); enabled {
+				return fmt.Errorf("accepts %d args, received %d", n, len(args))
+			}
 			if n == 1 {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Error: accepts 1 arg, received %d\n\n", len(args))
 			} else {

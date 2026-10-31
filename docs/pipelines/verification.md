@@ -111,7 +111,7 @@ or real GitHub installation contents request was used.
 | Comments, legacy reruns and system child wakeups cannot dispatch the old coordinator | `TestPipelineLegacyRerunCannotStartCoordinator`, `TestPipelineSquadCannotUseLegacySystemWakeTarget`, comment suppression checks |
 | Automation waits for the aggregate and gates; run_only is refused | `TestPipelineAutomationWaitsForAggregateAndRefusesRunOnly` |
 | Optional owners are notified once and unknown prices stay null | `TestPipelineOwnerNotificationAndUnpricedUsage` |
-| JSON errors preserve API error codes; querying a failed run succeeds | `cmd_pipeline_test.go`: source and error contract tests |
+| JSON errors preserve API fields through the real process exit; querying a failed run succeeds | `cli_json_process_test.go`: 40 process scenarios; `cmd_pipeline_test.go` retains the source/RunE contract checks |
 | Malformed shared responses fail closed; missing or future enums stay readable | `packages/core/pipelines/schema.test.ts` |
 
 v1.4 backend/core/CLI evidence (the visual portions of A38–A44 remain for YANF-8):
@@ -126,6 +126,49 @@ v1.4 backend/core/CLI evidence (the visual portions of A38–A44 remain for YANF
 | A43: association, task query, source query, unlink and fixed revision CLI/API | `TestDocumentAssociationAuthenticatedHTTP`, `TestDocumentAssociationCLIContract`, `TestDocumentReferencesUnlinkAndPinnedRevisionCLI` |
 | A44: competing appends return latest without overwriting or partial source writes; drafts survive conflicts | `TestDocumentAssociationCompetingAppendsPreserveDraft`, `TestDocumentAssociationCreateReplayAndConflicts`, core `documents/associations.test.ts` |
 | Source identities and project deletion cleanup | `TestDocumentAssociationAttachmentRepositoryAndCleanup`; full workspace deletion manifest suite |
+
+## D02 repair: CLI JSON errors (A27/A43)
+
+The acceptance report found that the previous RunE checks did not observe the
+final `main` formatter. The unmodified acceptance `cli_process_probe.py` was
+replayed against baseline `0e3a755d1da07e62ca3575cd103b6e774eeb6f2b` and reproduced
+the document 409 losing `code`/`latest`, squad configuration 404 losing
+`definition_not_owned`, and required pipeline flags producing plain text.
+The approval 409 and failed-run query were passing controls.
+
+The repair opts only pipeline, project-document and squad-update commands into
+structured error rendering. The final Cobra/main exit now covers errors raised
+before RunE, and JSON positional errors no longer print help onto stdout.
+Server objects retain all fields as raw JSON, including exact int64 revisions;
+the existing error chain and exit classifications remain intact. The bounded
+HTTP error reader also retains full latest-document snapshots instead of
+truncating them at 4 KiB. Non-JSON modes and unrelated command families are
+covered as unchanged controls. No API, engine, UI, migration or authentication
+policy changes are part of this repair.
+
+`TestPipelineJSONErrorProcess` builds the real executable and observes its exit,
+stdout and stderr in 40 scenarios. All HTTP requests use a loopback fake server
+and fake task credentials. It covers association/query/unlink, squad pipeline
+configuration, pipeline definition/run/job/artifact errors, missing required
+flags and positional arguments, invalid flags and local files, default JSON,
+`--debug`, a latest snapshot larger than 4 KiB, exact revisions above 2^53,
+success outputs, failed-run exit 0, non-JSON output and an unrelated command.
+Neither prototype simulation nor inspecting a RunE error type is counted as
+this process evidence.
+
+Repair checks actually run, through the installed-agent CLI guard:
+
+```sh
+go test -race -v ./cmd/multica \
+  -run 'TestPipelineJSONErrorProcess|TestPipelineCLI|TestDocumentAssociationCLI|TestDocumentReferences|TestProjectDocument|TestSquad' -count=1
+go test -race ./internal/cli \
+  -run 'TestHTTPError|TestFormatError|TestExitCodeFor|TestAPIClient|TestDownload|TestClient' -count=1
+```
+
+Both passed (CLI 3.346s; client/error checks 1.622s). The original five-case
+acceptance probe is also used for the fixed-binary delivery evidence. The full
+backend/core/UI suites were not re-run for D02. D01 remains owned by YANF-8;
+this repair does not integrate or start that work.
 
 ## Check that is not green
 
@@ -146,6 +189,9 @@ passes, or that the remaining concurrent failure is resolved. No repocache
 production code was changed. An earlier intermediate run also encountered
 unchanged daemon checkout tests with the same EPERM; the final full daemon
 suite passed (43.043 seconds).
+The later YANF-9 package-only run reported 114 passing repocache tests. That
+separate result does not close the historical concurrent full-suite failure;
+D02 does not repeat or reclassify that check.
 
 Because the regular-package half of `make test` failed, its later `pkg/agent`
 half did not run in that command. It was then run separately through the same

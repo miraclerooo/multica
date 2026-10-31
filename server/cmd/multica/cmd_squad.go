@@ -164,10 +164,11 @@ func runSquadCreate(cmd *cobra.Command, _ []string) error {
 // ── Update ──────────────────────────────────────────────────────────────────
 
 var squadUpdateCmd = &cobra.Command{
-	Use:   "update <squad-id>",
-	Short: "Update a squad",
-	Args:  exactArgs(1),
-	RunE:  runSquadUpdate,
+	Use:         "update <squad-id>",
+	Short:       "Update a squad",
+	Annotations: map[string]string{jsonErrorCodeAnnotation: "command_failed"},
+	Args:        exactArgs(1),
+	RunE:        runSquadUpdate,
 }
 
 func runSquadUpdate(cmd *cobra.Command, args []string) error {
