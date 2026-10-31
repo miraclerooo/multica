@@ -17,7 +17,7 @@ func init() {
 }
 
 func newProjectDocumentCommand() *cobra.Command {
-	group := &cobra.Command{Use: "document", Short: "Read and maintain project Specs & Docs"}
+	group := &cobra.Command{Use: "document", Short: "Read and maintain project Specs & Docs", Annotations: map[string]string{jsonErrorCodeAnnotation: "command_failed"}}
 	for _, operation := range []string{"list", "get", "history", "sources", "create", "update"} {
 		op := operation
 		use := op + " <project-id>"

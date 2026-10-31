@@ -200,6 +200,29 @@ All commands default to JSON. `get --output yaml` emits the saved source
 unchanged. API errors expose stable JSON codes on stderr and exit nonzero;
 stdout remains JSON when present. Querying a failed run still exits zero.
 
+The JSON error contract covers `pipeline ...`, `project document ...` (including
+association, queries and unlink), and `squad update ...`. HTTP error objects
+retain all fields, including `code`, `error`, `latest.version`, the latest body,
+diagnostics and exact integer revisions. HTTP error reads are bounded at 8 MiB
+to accommodate the existing 1 MiB Markdown limit after JSON escaping.
+
+API/transport errors and local argument, required-flag, flag-value and file
+errors emit one JSON object on stderr and leave stdout empty. They do not emit
+usage text or append text for `--debug`. When no server code exists, the stable
+fallback is `pipeline_command_failed` for pipeline commands and `command_failed`
+for project documents and squad updates. A non-object HTTP response also uses
+that fallback with an `error` string. A valid server object is preserved even
+when it omits `code`; only missing `code`/`error` fields receive defaults.
+
+Exit semantics are unchanged: pipeline JSON errors use exit 1; document/squad
+HTTP failures retain the existing classification (network 2, auth 3, not found
+4, validation 5, other failures 1), and local errors use exit 1. Non-JSON modes
+retain their human-readable errors, help and exit classification; unrelated
+command families keep their existing output behavior. Successful business
+queries, including a run whose status is `failed`, keep stdout JSON, empty
+stderr and exit 0. The existing `validate` diagnostic response and nonzero exit
+for an invalid source remain unchanged.
+
 ```sh
 multica pipeline capabilities
 multica pipeline validate flow.yaml --squad <id>
@@ -330,6 +353,10 @@ multica project document unlink PROJ-42 <document-uuid>
 `source.json` contains one source object from the table above. Labels and
 descriptions are escaped as Markdown text. CLI conflict errors retain the
 structured API body and nonzero exit status.
+For example, a stale association returns stderr such as
+`{"code":"document_version_conflict","error":"Document changed","latest":{"version":6}}`
+with no stdout. Consumers can use the preserved latest snapshot to compare
+the draft before submitting a new explicit base version.
 
 The headless `@multica/core/documents` API exports the association/source/group
 schemas, typed inputs, client methods, query options and mutations. Every
@@ -402,6 +429,10 @@ Canonical evidence lives beside the implementation:
   proves branch resolution and pinned content reads.
 - `cmd/multica/cmd_pipeline_test.go`: exact source round-trip, JSON errors and
   failed-run query exit behavior through a fake HTTP service.
+- `cmd/multica/cli_json_process_test.go`: builds the real CLI and checks 40
+  subprocess scenarios through its final Cobra/main error exit, with loopback
+  HTTP only. Covers API payload preservation, large conflicts, local argument
+  errors, clean streams, exit codes, success controls and non-JSON behavior.
 - `packages/core/pipelines/schema.test.ts`: malformed responses and legacy or
   unknown enums fail safely at the shared API boundary.
 - `internal/handler/project_document_issue_test.go`: grouping/search, document

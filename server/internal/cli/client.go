@@ -98,7 +98,9 @@ func (e *HTTPError) Error() string {
 // classify the failure via errors.As(err, **HTTPError) regardless of which
 // HTTP verb the command used.
 func newHTTPError(method, path string, resp *http.Response) *HTTPError {
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	// A document conflict includes its latest Markdown snapshot (up to 1 MiB).
+	// Leave room for JSON escaping so code and revision fields are not truncated.
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024*1024))
 	return &HTTPError{
 		Method:     method,
 		Path:       path,
