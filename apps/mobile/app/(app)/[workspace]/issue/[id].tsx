@@ -1,3 +1,4 @@
+import { IssuePipelineCard } from "@/components/pipeline/issue-pipeline-card";
 /**
  * Issue detail screen.
  *
@@ -213,6 +214,7 @@ export default function IssueDetail() {
         </View>
       ) : (
         <View className="flex-1">
+          <IssuePipelineCard issueId={issue.id} />
           <TimelineList
             issue={issue}
             entries={timeline.data}

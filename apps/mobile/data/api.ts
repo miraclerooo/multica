@@ -1,3 +1,7 @@
+import { publishedMaterialContentType } from "@multica/core/documents/links";
+import { PipelineRunSchema, PipelineRunListSchema, PipelineArtifactListSchema, type PipelineRun, type PipelineArtifact, type PipelineDecisionInput } from "@multica/core/pipelines/schema";
+import { DocumentCollectionSchema, type DocumentCollection } from "@multica/core/documents/associations";
+import { ProjectDocumentSchema, type ProjectDocument } from "@multica/core/documents/schema";
 /**
  * Mobile-owned fetch wrapper. Mirrors the surface area of
  * packages/core/api/client.ts that mobile actually uses, but lives in
@@ -213,10 +217,10 @@ class ApiClient {
     this.options = { ...this.options, ...options };
   }
 
-  private async fetch<T>(
+  private async fetchRaw(
     path: string,
-    init: RequestInit & { signal?: AbortSignal } = {},
-  ): Promise<T> {
+    init: RequestInit = {},
+  ): Promise<Response> {
     const rid = createRequestId();
     const start = Date.now();
     const method = init.method ?? "GET";
@@ -330,8 +334,13 @@ class ApiClient {
       duration: `${duration}ms`,
     });
 
-    if (res.status === 204) return undefined as T;
-    return (await res.json()) as T;
+    return res;
+  }
+
+  private async fetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const response = await this.fetchRaw(path, init);
+    if (response.status === 204) return undefined as T;
+    return (await response.json()) as T;
   }
 
   /**
@@ -349,6 +358,40 @@ class ApiClient {
    * The `endpoint` label defaults to the request path — override only when
    * the path has dynamic segments and you want stable telemetry labels.
    */
+  listPipelineRuns(issueId: string, offset = 0, opts?: { signal?: AbortSignal }): Promise<{items: PipelineRun[]; limit: number; offset: number}> {
+    return this.fetchValidated(`/api/pipeline-runs?issue_id=${encodeURIComponent(issueId)}&limit=20&offset=${offset}`, PipelineRunListSchema, { items: [], limit: 20, offset: 0 }, opts);
+  }
+  getPipelineRun(id: string, opts?: { signal?: AbortSignal }): Promise<PipelineRun | null> {
+    return this.fetchValidated(`/api/pipeline-runs/${encodeURIComponent(id)}`, PipelineRunSchema, null, opts);
+  }
+  listPipelineArtifacts(id: string, offset = 0, opts?: { signal?: AbortSignal }): Promise<{items: PipelineArtifact[]; limit: number; offset: number}> {
+    return this.fetchValidated(`/api/pipeline-runs/${encodeURIComponent(id)}/artifacts?limit=50&offset=${offset}`, PipelineArtifactListSchema, { items: [], limit: 50, offset: 0 }, opts);
+  }
+  async decidePipelineJob(id: string, job: string, input: PipelineDecisionInput): Promise<PipelineRun> {
+    const result = await this.fetchValidatedWith<PipelineRun | null>(`/api/pipeline-runs/${encodeURIComponent(id)}/jobs/${encodeURIComponent(job)}/decisions`, PipelineRunSchema, null, { method: "POST", body: JSON.stringify(input) });
+    if (!result) throw new Error("Invalid pipeline decision acknowledgement");
+    return result;
+  }
+  listProjectDocuments(id: string, q = "", opts?: { signal?: AbortSignal }): Promise<DocumentCollection> {
+    return this.fetchValidated(`/api/projects/${encodeURIComponent(id)}/documents?q=${encodeURIComponent(q)}`, DocumentCollectionSchema, { documents: [], total: 0, groups: [], references: [] }, opts);
+  }
+  getProjectDocument(projectId: string, documentId: string, version?: number, opts?: { signal?: AbortSignal }): Promise<ProjectDocument | null> {
+    return this.fetchValidated(`/api/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}${version ? `/revisions/${version}` : ""}`, ProjectDocumentSchema, null, opts);
+  }
+  async getPublishedMaterial(path: string, opts?: { signal?: AbortSignal }, filename = "") {
+    const response = await this.fetchRaw(path, opts);
+    const contentType = publishedMaterialContentType(response.headers.get("Content-Type") ?? "application/octet-stream", filename);
+    if (/^(text\/|application\/(json|yaml))/.test(contentType)) return { contentType, text: await response.text(), dataUri: "" };
+    const blob = await response.blob();
+    const dataUri = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob.slice(0, blob.size, contentType));
+    });
+    return { contentType, text: "", dataUri };
+  }
+
   private async fetchValidated<T>(
     path: string,
     schema: ZodType,

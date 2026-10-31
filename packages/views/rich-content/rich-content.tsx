@@ -25,6 +25,8 @@
  *             settled-but-malformed fence still renders as source.
  */
 
+import { publishedMaterialPath } from "@multica/core/documents/links";
+import { PublishedMaterialLink } from "../editor/published-material-link";
 import { createContext, isValidElement, memo, useContext, useMemo, useRef } from "react";
 import ReactMarkdown, {
   type Components,
@@ -333,6 +335,9 @@ function RichLink({ href, children }: { href?: string; children?: ReactNode }) {
       {children}
     </a>
   );
+
+  const materialPath = href && !attachmentId ? publishedMaterialPath(href, [appOrigin ?? "", api.getBaseUrl?.() ?? "", attachmentPublicUrl]) : null;
+  if (materialPath && href) return <PublishedMaterialLink href={href} path={materialPath} renderMarkdown={text => <RichContent content={text} />}>{children}</PublishedMaterialLink>;
 
   // A bare in-app entity URL renders as the chip its mention form would.
   const entity = href

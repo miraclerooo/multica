@@ -119,6 +119,8 @@ import { QuickActionsSection } from "./quick-actions-section";
 import { PluginPanelSection } from "../../plugins";
 import { PullRequestsSection } from "./pull-requests-section";
 import { useGitHubSettings } from "@multica/core/github";
+import { IssuePipelineCard } from "../../pipelines/run-details";
+import { IssueDocuments } from "../../projects/documents/associate-document";
 import { DeliverablesSection } from "./deliverables/deliverables-section";
 import { DeliverablesOverview } from "./deliverables/deliverables-overview";
 import {
@@ -2511,6 +2513,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   }, [locateRootRequest, jumpToThread]);
 
   const describeDeliverable = useDeliverableDetails({
+    issueId: issue?.id,
+    projectId: issue?.project_id,
     files: deliverableFiles,
     commentById,
     onLocate: locateOrigin,
@@ -3000,6 +3004,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       />
 
       <PluginPanelSection issueId={issue.id} />
+      <IssuePipelineCard issue={issue} />
+      <IssueDocuments issueId={issue.id} projectId={issue.project_id} />
 
       {/* Parent issue — standalone section, only when the issue has a
           parent. Setting a parent is reachable via the issue actions menu;

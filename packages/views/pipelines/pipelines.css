@@ -1,0 +1,96 @@
+.pipeline-panel {
+  min-width: 0;
+  color: var(--foreground);
+}
+.pipeline-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.pipeline-select {
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) * 0.75);
+  padding: 6px 10px;
+  background: var(--background);
+  font-size: var(--text-caption);
+}
+.pipeline-source {
+  width: 100%;
+  min-height: 360px;
+  resize: vertical;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) * 0.75);
+  background: var(--muted);
+  font: var(--text-caption) / 1.8 var(--font-mono);
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+.pipeline-graph {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: radial-gradient(var(--border) 0.7px, transparent 0.7px) 0 0 / 16px
+    16px;
+  overflow: hidden;
+}
+.pipeline-node {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 72px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  text-align: left;
+  font-size: var(--text-caption);
+  box-shadow: 0 2px 4px #00000005;
+}
+.pipeline-node:hover {
+  background: var(--accent);
+}
+.pipeline-node.is-selected,
+.pipeline-node.is-selected:hover {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 1px var(--brand);
+  background: var(--accent);
+}
+.pipeline-node-list {
+  gap: 8px;
+  padding: 12px;
+}
+.pipeline-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  min-width: 0;
+}
+.pipeline-box h3 {
+  font-size: var(--text-label);
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.pipeline-error {
+  color: var(--destructive);
+  font-size: var(--text-caption);
+  overflow-wrap: anywhere;
+}
+.pipeline-metadata {
+  font-size: var(--text-caption);
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+.pipeline-material {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: var(--muted);
+  border-radius: calc(var(--radius) * 0.75);
+  overflow-wrap: anywhere;
+}

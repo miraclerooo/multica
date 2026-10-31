@@ -4834,6 +4834,16 @@ export class ApiClient {
     return parseWithFallback<{items: pipelines.PipelineArtifact[]; limit: number; offset: number}>(await this.fetch<unknown>(endpoint), pipelines.PipelineArtifactListSchema, {items: [], limit: 50, offset: 0}, { endpoint });
   }
 
+  async getPublishedMaterialContent(path: string): Promise<Blob> {
+    const response = await this.fetchRaw(path);
+    return response.blob();
+  }
+
+  async getPipelineArtifactContent(runId: string, artifactId: string): Promise<Blob> {
+    const response = await this.fetchRaw(`/api/pipeline-runs/${encodeURIComponent(runId)}/artifact-content?artifact_id=${encodeURIComponent(artifactId)}`);
+    return response.blob();
+  }
+
   // Squads
   async listSquads(): Promise<Squad[]> {
     const raw = await this.fetch<unknown>(`/api/squads`);

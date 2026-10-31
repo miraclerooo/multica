@@ -10,6 +10,7 @@ import type { Label } from "./label";
 
 // WebSocket event types (matching Go server protocol/events.go)
 export type WSEventType =
+  | "pipeline:updated"
   | "issue:created"
   | "issue:updated"
   | "issue_attachments:changed"
@@ -575,6 +576,7 @@ export interface ChatSessionCreatedPayload {
  * forgets the payload shape — that's the whole point.
  */
 export interface WSEventPayloadMap {
+  "pipeline:updated": { run_id?: string; issue_id?: string; squad_id?: string };
   "issue:created": IssueCreatedPayload;
   "issue:updated": IssueUpdatedPayload;
   "issue:deleted": IssueDeletedPayload;

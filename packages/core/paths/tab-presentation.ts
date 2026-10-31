@@ -42,6 +42,7 @@ export type TabVisual =
 export type TabLabelKey =
   | "issue"
   | "project"
+  | "pipeline"
   | "autopilot"
   | "agent"
   | "member"
@@ -171,6 +172,8 @@ export function resolveTabPresentation(
         visual: { kind: "project-icon", icon: data.project?.icon ?? null },
         title: textOr(data.project?.title, "project"),
       };
+    case "pipeline":
+      return { visual: { kind: "icon", icon: "Zap" }, title: { kind: "tab", tabKey: "pipeline" } };
     case "autopilot":
       return {
         visual: { kind: "icon", icon: "Zap" },

@@ -25,7 +25,8 @@
     "runtime": "ランタイム",
     "attachment": "添付ファイル",
     "create_agent": "エージェントを作成",
-    "unknown": "不明なページ"
+    "unknown": "不明なページ",
+    "pipeline": "パイプライン"
   },
   "help": {
     "trigger": "ヘルプ",

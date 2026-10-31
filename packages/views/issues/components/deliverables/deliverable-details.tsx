@@ -1,5 +1,6 @@
 "use client";
 
+import { AssociateDocument } from "../../../projects/documents/associate-document";
 import { useCallback, type ReactNode } from "react";
 import { Check, ChevronDown, FileText, ImageIcon, MessageSquareText } from "@multica/ui/icons";
 import {
@@ -41,10 +42,14 @@ export type DeliverableOrigin =
  * switcher next to the file name, the info panel, and "show in comments".
  */
 export function useDeliverableDetails({
+  issueId,
+  projectId,
   files,
   commentById,
   onLocate,
 }: {
+  issueId?: string;
+  projectId?: string | null;
   files: ReadonlyArray<DeliverableFile>;
   commentById: ReadonlyMap<string, TimelineEntry>;
   onLocate: (origin: DeliverableOrigin) => void;
@@ -84,7 +89,7 @@ export function useDeliverableDetails({
             />
           ) : undefined,
         info: (
-          <DeliverableInfo
+          <><DeliverableInfo
             item={item}
             controls={controls}
             comment={origin?.kind === "comment" ? commentById.get(origin.commentId) : undefined}
@@ -92,12 +97,12 @@ export function useDeliverableDetails({
             version={deliverable}
             locateLabel={locateLabel}
             onLocate={locate}
-          />
+          />{issueId && item.attachment && <AssociateDocument issueId={issueId} projectId={projectId} source={{ kind: "attachment", attachment_id: item.attachment.id }} label={item.attachment.filename} />}</>
         ),
         locate: locate ? { label: locateLabel, onSelect: locate } : undefined,
       };
     },
-    [files, commentById, onLocate, t],
+    [files, commentById, onLocate, t, issueId, projectId],
   );
 }
 

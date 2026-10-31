@@ -1,3 +1,4 @@
+import { publishedMaterialPath } from "@/lib/published-material";
 /**
  * Public Markdown component for the mobile app. Hybrid renderer:
  *
@@ -161,6 +162,11 @@ export function Markdown({
           if (type === "issue") router.push(`/${wsSlug}/issue/${id}`);
           else if (type === "project") router.push(`/${wsSlug}/project/${id}`);
         }
+        return;
+      }
+      const materialPath = publishedMaterialPath(url, process.env.EXPO_PUBLIC_API_URL ?? "");
+      if (materialPath && wsSlug) {
+        router.push({ pathname: `/${wsSlug}/pipeline/material`, params: {path: materialPath} });
         return;
       }
       // Everything else — http(s), mailto, tel, app-scheme deep links —
