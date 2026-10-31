@@ -397,6 +397,9 @@
     "keep_draft": "保留草稿并切换",
     "mika_invalid": "Mika 尚未返回所选方言的完整有效 YAML。",
     "preview_unavailable": "此文件暂不支持预览，请在 Web 打开已发布材料。",
-    "open_web": "在 Web 打开"
+    "open_web": "在 Web 打开",
+    "readonly_status": "当前客户端不识别此运行状态，运行操作为只读，仍可查看。",
+    "readonly_plan": "当前客户端不支持此执行计划，运行操作为只读，仍可查看。",
+    "readonly_job": "当前客户端不识别某个节点状态，运行操作为只读，仍可查看。"
   }
 }

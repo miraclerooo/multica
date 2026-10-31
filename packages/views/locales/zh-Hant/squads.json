@@ -253,6 +253,9 @@
     "keep_draft": "保留草稿並切換",
     "mika_invalid": "Mika 尚未返回所选方言的完整有效 YAML。",
     "preview_unavailable": "此檔案暫不支援預覽，請在 Web 開啟已發布資料。",
-    "open_web": "在 Web 開啟"
+    "open_web": "在 Web 開啟",
+    "readonly_status": "目前用戶端無法辨識此執行狀態，執行操作為唯讀，仍可檢視。",
+    "readonly_plan": "目前用戶端不支援此執行計畫，執行操作為唯讀，仍可檢視。",
+    "readonly_job": "目前用戶端無法辨識某個節點狀態，執行操作為唯讀，仍可檢視。"
   }
 }

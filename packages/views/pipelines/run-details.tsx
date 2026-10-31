@@ -23,6 +23,7 @@ import {
   pipelineArtifactsOptions,
   pipelineDependencies,
   pipelineUsage,
+  pipelineRunActions,
   useCancelPipelineRun,
   usePipelineDecision,
   useRetryPipelineJob,
@@ -294,6 +295,7 @@ export function PipelineRunDetails({ runId }: { runId: string }) {
     snapshot.jobs.find((j) => j.node.id === selected) ??
     snapshot.jobs.find((j) => j.status === "waiting_approval") ??
     snapshot.jobs[0];
+  const actions = pipelineRunActions(snapshot);
   return (
     <div
       className="pipeline-panel space-y-4 max-w-7xl mx-auto"
@@ -312,15 +314,13 @@ export function PipelineRunDetails({ runId }: { runId: string }) {
           <Button variant="ghost" size="sm" onClick={refresh}>
             {t(($) => $.pipeline.refresh)}
           </Button>
-          {currentMember.member &&
-            ["running", "waiting_approval", "blocked"].includes(
-              snapshot.status,
-            ) && (
+          {currentMember.member && (actions.cancel || actions.restriction) && (
               <Button
                 variant="outline"
                 size="sm"
-                disabled={cancel.isPending}
+                disabled={!actions.cancel || cancel.isPending}
                 onClick={() => {
+                  if (!actions.cancel || !currentMember.member || cancel.isPending) return;
                   if (window.confirm(t(($) => $.pipeline.cancel_confirm)))
                     cancel.mutate({
                       reason: "Cancelled from pipeline view",
@@ -333,6 +333,16 @@ export function PipelineRunDetails({ runId }: { runId: string }) {
             )}
         </div>
       </div>
+      {actions.restriction && (
+        <p role="status" className="pipeline-error">
+          {actions.restriction.code === "status"
+            ? t(($) => $.pipeline.readonly_status)
+            : actions.restriction.code === "job_status"
+              ? t(($) => $.pipeline.readonly_job)
+              : t(($) => $.pipeline.readonly_plan)}{" "}
+          <code>{actions.restriction.value}</code>
+        </p>
+      )}
       <Usage run={snapshot} />
       <p className="pipeline-metadata">
         {t(($) => $.pipeline.version)}: <code>{snapshot.definition_id}</code> ·{" "}
@@ -406,11 +416,11 @@ function JobDetails({
           ?.artifacts ?? [],
     );
   const conflict = reviewedRevision !== job.revision;
+  const actions = pipelineRunActions(run, job);
   const ready =
     canOperate &&
-    job.status === "waiting_approval" &&
+    actions.decide &&
     !conflict &&
-    !["cancelled", "cancelling", "rejected"].includes(run.status) &&
     materials.every((a) => a.status === "accessible");
   const submit = async (value: "approve" | "reject") => {
     if (!ready || decision.isPending || (value === "reject" && !reason.trim()))
@@ -473,13 +483,14 @@ function JobDetails({
             <Button
               variant="outline"
               size="sm"
-              disabled={retry.isPending}
-              onClick={() =>
+              disabled={!actions.retry || retry.isPending}
+              onClick={() => {
+                if (!actions.retry || !canOperate || retry.isPending) return;
                 retry.mutate({
                   expected_revision: job.revision,
                   idempotency_key: crypto.randomUUID(),
-                })
-              }
+                });
+              }}
             >
               {t(($) => $.pipeline.retry)}
             </Button>
@@ -587,7 +598,7 @@ function JobDetails({
                     className="mt-2 w-full rounded-md border p-3 text-body bg-background"
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
-                    readOnly={!canOperate || decision.isPending}
+                    readOnly={!canOperate || !!actions.restriction || decision.isPending}
                   />
                 </label>
                 {!reason.trim() && (

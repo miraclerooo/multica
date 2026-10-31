@@ -257,6 +257,9 @@
     "keep_draft": "Conserver le brouillon et changer",
     "mika_invalid": "Mika n’a pas encore renvoyé de YAML complet et valide dans le dialecte choisi.",
     "preview_unavailable": "Aperçu indisponible pour ce fichier. Ouvrez le document publié sur Web.",
-    "open_web": "Ouvrir sur Web"
+    "open_web": "Ouvrir sur Web",
+    "readonly_status": "Ce client ne reconnaît pas l’état de l’exécution. Les commandes sont en lecture seule ; le contenu reste consultable.",
+    "readonly_plan": "Ce client ne prend pas en charge ce plan. Les commandes sont en lecture seule ; le contenu reste consultable.",
+    "readonly_job": "Ce client ne reconnaît pas l’état d’un nœud. Les commandes sont en lecture seule ; le contenu reste consultable."
   }
 }

@@ -257,6 +257,9 @@
     "keep_draft": "Keep draft and switch",
     "mika_invalid": "Mika has not returned complete valid YAML in the selected dialect.",
     "preview_unavailable": "Preview is unavailable for this file. Open the published material on Web.",
-    "open_web": "Open in Web"
+    "open_web": "Open in Web",
+    "readonly_status": "This client does not recognize the run status. Run controls are read-only; you can continue reading.",
+    "readonly_plan": "This client does not support this plan. Run controls are read-only; you can continue reading.",
+    "readonly_job": "This client does not recognize a node status. Run controls are read-only; you can continue reading."
   }
 }

@@ -22,6 +22,7 @@ import type {
 import {
   pipelineDependencies,
   pipelineUsage,
+  pipelineRunActions,
 } from "@multica/core/pipelines/utils";
 import {
   pipelineRunOptions,
@@ -95,12 +96,13 @@ function RunDetails({ run }: { run: PipelineRun }) {
           ?.artifacts ?? [],
     ) ??
     [];
+  const actions = pipelineRunActions(run, job);
   const ready =
     !!user &&
-    job?.status === "waiting_approval" &&
+    actions.decide &&
+    !!job &&
     job.revision === reviewed &&
-    materials.every((a) => a.status === "accessible") &&
-    !["cancelled", "cancelling", "rejected"].includes(run.status);
+    materials.every((a) => a.status === "accessible");
   useEffect(
     () =>
       navigation.addListener("beforeRemove", (event) => {
@@ -170,6 +172,16 @@ function RunDetails({ run }: { run: PipelineRun }) {
         <Text>
           {run.status} · {run.reason}
         </Text>
+        {actions.restriction && (
+          <Text accessibilityRole="alert" className="text-destructive" selectable>
+            {actions.restriction.code === "status"
+              ? t("pipeline.readonly_status")
+              : actions.restriction.code === "job_status"
+                ? t("pipeline.readonly_job")
+                : t("pipeline.readonly_plan")}{" "}
+            {actions.restriction.value}
+          </Text>
+        )}
         <Text className="text-xs text-muted-foreground">
           {run.plan.kind} · {t("pipeline.tokens")} {usage.tokens} ·{" "}
           {usage.unpriced
@@ -311,7 +323,7 @@ function RunDetails({ run }: { run: PipelineRun }) {
                     multiline
                     value={reason}
                     onChangeText={setReason}
-                    editable={!!user && !decision.isPending}
+                    editable={!!user && !actions.restriction && !decision.isPending}
                     className="min-h-28 rounded-lg border border-border p-3 text-base text-foreground"
                     style={{ textAlignVertical: "top" }}
                   />

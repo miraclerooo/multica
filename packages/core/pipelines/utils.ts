@@ -1,5 +1,55 @@
 import { parseDocument } from "yaml";
-import type { PipelinePlan, PipelineRun } from "./schema";
+import type { PipelineJob, PipelinePlan, PipelineRun } from "./schema";
+
+const activeRunStatuses = new Set(["queued", "running", "waiting_approval", "blocked"]);
+const knownRunStatuses = new Set([
+  ...activeRunStatuses, "succeeded", "failed", "cancelling", "cancelled", "rejected",
+]);
+const knownJobStatuses = new Set([
+  "pending", "ready", "queued", "running", "waiting_approval", "blocked",
+  "succeeded", "failed", "skipped", "cancelled", "rejected",
+]);
+
+type PipelineWriteRestriction = {
+  code: "status" | "plan" | "job_status";
+  value: string;
+};
+
+// Keep unfamiliar snapshots readable, but never infer write semantics from
+// the absence of a known terminal state. These actions match compiler v1.
+export function pipelineRunActions(run: PipelineRun, job?: PipelineJob) {
+  let restriction: PipelineWriteRestriction | null = null;
+  if (!["gitlab_yaml", "hermes_yaml"].includes(run.plan.kind)) {
+    restriction = { code: "plan", value: run.plan.kind };
+  } else if (run.plan.compiler_version !== "1") {
+    restriction = { code: "plan", value: `compiler_version=${run.plan.compiler_version}` };
+  } else if (!knownRunStatuses.has(run.status)) {
+    restriction = { code: "status", value: run.status };
+  } else {
+    for (const node of [...run.plan.nodes, ...run.jobs.map((j) => j.node)]) {
+      if (!["agent", "manual"].includes(node.type)) {
+        restriction = { code: "plan", value: `node.type=${node.type}` };
+        break;
+      }
+      if (!["on_success", "on_failure", "always", "manual"].includes(node.when)) {
+        restriction = { code: "plan", value: `node.when=${node.when}` };
+        break;
+      }
+    }
+    const unknownJob = run.jobs.find((j) => !knownJobStatuses.has(j.status));
+    if (!restriction && unknownJob) {
+      restriction = { code: "job_status", value: `${unknownJob.node.id}: ${unknownJob.status}` };
+    }
+  }
+  const active = !restriction && activeRunStatuses.has(run.status);
+  return {
+    restriction,
+    cancel: active,
+    decide: active && job?.node.type === "manual" && job.status === "waiting_approval" && !job.decision,
+    retry: !restriction && (active || ["failed", "succeeded"].includes(run.status)) &&
+      job?.node.type === "agent" && ["failed", "blocked"].includes(job.status),
+  };
+}
 
 export function pipelineSourceKind(source: string): string {
   try {
