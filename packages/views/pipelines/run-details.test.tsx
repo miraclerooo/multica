@@ -84,10 +84,11 @@ type SnapshotOptions = {
   nodeType?: string;
   jobStatus?: string;
   parallel?: boolean;
+  parallelWhen?: string;
 };
 function snapshot({
   status = "waiting_approval", kind = "gitlab_yaml", version = "1",
-  nodeType = "manual", jobStatus = "waiting_approval", parallel = false,
+  nodeType = "manual", jobStatus = "waiting_approval", parallel = false, parallelWhen = "on_success",
 }: SnapshotOptions = {}) {
   const node = {
     id: "review", source_id: "review", title: "Review gate", type: nodeType,
@@ -95,7 +96,7 @@ function snapshot({
     paths: [], when: nodeType === "manual" ? "manual" : "on_success",
     allow_failure: status === "succeeded", retry: 0,
   };
-  const worker = { ...node, id: "worker", source_id: "worker", title: "Parallel worker", type: "agent", when: "on_success" };
+  const worker = { ...node, id: "worker", source_id: "worker", title: "Parallel worker", type: "agent", when: parallelWhen };
   const nodes = parallel ? [node, worker] : [node];
   return PipelineRunSchema.parse({
     id: "run", workspace_id: "ws", issue_id: "issue", squad_id: "s", definition_id: "d",
@@ -135,8 +136,8 @@ it("allows a known waiting approval as a control", async () => {
     decision: "approve", expected_revision: 1, idempotency_key: expect.any(String),
   })));
 });
-it("allows a gate while a parallel agent keeps the run running", async () => {
-  mount({ status: "running", parallel: true });
+it.each(["on_success", "on_failure"])("allows a gate while a v1 %s agent keeps the run running", async (parallelWhen) => {
+  mount({ status: "running", parallel: true, parallelWhen });
   expect(await screen.findByRole("button", { name: "Approve" })).toBeEnabled();
   fireEvent.click(screen.getByRole("button", { name: "Approve" }));
   await waitFor(() => expect(state.decide).toHaveBeenCalledTimes(1));
@@ -146,6 +147,7 @@ it.each([
   { options: { kind: "future_yaml" }, message: en.pipeline.readonly_plan, value: "future_yaml" },
   { options: { version: "2" }, message: en.pipeline.readonly_plan, value: "compiler_version=2" },
   { options: { jobStatus: "future_node_hold" }, message: en.pipeline.readonly_job, value: "review: future_node_hold" },
+  { options: { status: "running", parallel: true, parallelWhen: "always" }, message: en.pipeline.readonly_plan, value: "node.when=always" },
 ])("preserves reading/opinions and guards both decision handlers for $value", async ({ options, message, value }) => {
   const client = mount();
   await screen.findByRole("button", { name: "Approve" });
@@ -161,7 +163,7 @@ it.each([
   await force("Reject");
   expect(state.decide).not.toHaveBeenCalled();
 });
-it.each([{ status: "future_policy_hold" }, { kind: "future_yaml" }])(
+it.each([{ status: "future_policy_hold" }, { kind: "future_yaml" }, { parallelWhen: "always" }])(
   "guards retry and cancellation callbacks for an unfamiliar snapshot %j",
   async (unknown) => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);

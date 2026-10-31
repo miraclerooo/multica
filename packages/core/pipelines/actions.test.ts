@@ -29,6 +29,16 @@ it.each(["queued", "running", "waiting_approval", "blocked"])(
   },
 );
 
+it.each(["on_success", "on_failure"])("allows a gate alongside a compiler v1 %s agent", (when) => {
+  const run = snapshot("running");
+  const worker = { ...run.jobs[0]!.node, id: "worker", source_id: "worker", type: "agent", when };
+  run.plan.nodes.push(worker);
+  run.jobs.push({ ...run.jobs[0]!, node: worker, status: "running" });
+  expect(pipelineRunActions(run, run.jobs[0])).toMatchObject({
+    restriction: null, decide: true, cancel: true,
+  });
+});
+
 it.each(["failed", "succeeded", "cancelled", "cancelling", "rejected"])(
   "never approves or cancels a %s run",
   (status) => {
@@ -56,6 +66,7 @@ it.each([
   { field: "compiler_version", value: "2", code: "plan" },
   { field: "node_type", value: "future_gate", code: "plan" },
   { field: "when", value: "future_condition", code: "plan" },
+  { field: "when", value: "always", code: "plan" },
   { field: "job_status", value: "future_node_hold", code: "job_status" },
 ])("blocks all run writes for unknown $field while preserving its value", ({ field, value, code }) => {
   const run = snapshot("running");

@@ -31,7 +31,7 @@ export function pipelineRunActions(run: PipelineRun, job?: PipelineJob) {
         restriction = { code: "plan", value: `node.type=${node.type}` };
         break;
       }
-      if (!["on_success", "on_failure", "always", "manual"].includes(node.when)) {
+      if (!["on_success", "on_failure", "manual"].includes(node.when)) {
         restriction = { code: "plan", value: `node.when=${node.when}` };
         break;
       }
