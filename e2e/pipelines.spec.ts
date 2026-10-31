@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { createTestApi } from "./helpers";
 
 const runtimeErrors = new WeakMap<Page, string[]>();
@@ -153,6 +154,102 @@ test("preserves custom YAML across dialects, validates real plans and atomically
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByRole("button", { name: "Pipeline", exact: true }).click();
     await expect(editor).toHaveValue(source);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("declares a selected Hermes squad role and keeps leader fallback valid", async ({
+  page,
+}, info) => {
+  const f = await setup(page);
+  try {
+    const renamed = await f.api.request(`/api/squads/${f.squad.id}/members/role`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        member_type: "agent",
+        member_id: f.squad.leader_id,
+        role: "reviewer",
+      }),
+    });
+    expect(renamed.ok).toBeTruthy();
+    await page.goto(`/${f.workspace.slug}/squads/${f.squad.id}`);
+    await page.getByRole("button", { name: "Pipeline", exact: true }).click();
+    const editor = page.getByRole("textbox", { name: "YAML", exact: true });
+    const original = `kind: hermes_yaml
+# Preserve the user's workflow.
+roles: {}
+states:
+  collect:
+    entry: Preserve the original instruction.
+`;
+    await editor.fill(original);
+    const save = page.getByRole("button", {
+      name: "Save and enable",
+      exact: true,
+    });
+    await expect(save).toBeEnabled({ timeout: 15_000 });
+    await page.getByText("Role bindings", { exact: true }).click();
+    const picker = page.locator("select").filter({
+      has: page.locator('option[value="reviewer"]'),
+    });
+    await expect(picker).toHaveCount(1);
+    const [selectedResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().endsWith("/api/pipelines/validate") &&
+          (response.request().postData() ?? "").includes("by: reviewer"),
+      ),
+      picker.selectOption("reviewer"),
+    ]);
+    const selected = await selectedResponse.json();
+    expect(selectedResponse.request().postDataJSON().squad_id).toBe(f.squad.id);
+    expect(selected).toMatchObject({ syntax_valid: true, binding_valid: true });
+    expect(selected.plan.nodes[0].role).toBe("reviewer");
+    await expect(picker).toHaveValue("reviewer");
+    await expect(save).toBeEnabled({ timeout: 15_000 });
+    if (!(await picker.isVisible())) {
+      await page.getByText("Role bindings", { exact: true }).click();
+    }
+    await expect(picker).toBeVisible();
+    const selectedSource = await editor.inputValue();
+    expect(selectedSource).toContain("entry: Preserve the original instruction.");
+    expect(selectedSource).toContain("# Preserve the user's workflow.");
+    await page.screenshot({
+      style: "nextjs-portal { display: none !important; }",
+      path: info.outputPath("hermes-role-selected.png"),
+      fullPage: true,
+    });
+    const [leaderResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().endsWith("/api/pipelines/validate") &&
+          !(response.request().postData() ?? "").includes("by: reviewer"),
+      ),
+      picker.selectOption({ value: "" }),
+    ]);
+    const leader = await leaderResponse.json();
+    expect(leader).toMatchObject({ syntax_valid: true, binding_valid: true });
+    expect(leader.plan.nodes[0].role).toBe("");
+    await expect(picker).toHaveValue("");
+    await expect(save).toBeEnabled({ timeout: 15_000 });
+    if (!(await picker.isVisible())) {
+      await page.getByText("Role bindings", { exact: true }).click();
+    }
+    await expect(picker).toBeVisible();
+    await page.screenshot({
+      style: "nextjs-portal { display: none !important; }",
+      path: info.outputPath("hermes-role-leader.png"),
+      fullPage: true,
+    });
+    await writeFile(
+      info.outputPath("hermes-role-validation.json"),
+      JSON.stringify({
+        original_source: original,
+        selected: { source: selectedSource, validation: selected },
+        leader: { source: await editor.inputValue(), validation: leader },
+      }, null, 2),
+    );
   } finally {
     await f.cleanup();
   }

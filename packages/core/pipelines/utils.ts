@@ -9,8 +9,8 @@ export function pipelineSourceKind(source: string): string {
   }
 }
 
-// Edit only the selected binding in the user's document, preserving comments,
-// instructions and custom structure through the YAML document model.
+// Edit the binding and its required declaration in the user's document,
+// preserving comments, instructions and structure through the YAML model.
 export function bindPipelineRole(
   source: string,
   node: PipelinePlan["nodes"][number],
@@ -21,8 +21,10 @@ export function bindPipelineRole(
   if (pipelineSourceKind(source) === "hermes_yaml") {
     if (node.type === "manual")
       throw new Error("Manual gates do not bind an executor");
-    if (role) doc.setIn(["states", node.source_id, "by"], role);
-    else doc.deleteIn(["states", node.source_id, "by"]);
+    if (role) {
+      if (!doc.hasIn(["roles", role])) doc.setIn(["roles", role], {});
+      doc.setIn(["states", node.source_id, "by"], role);
+    } else doc.deleteIn(["states", node.source_id, "by"]);
   } else {
     doc.setIn([node.source_id, "tags"], role ? [role] : []);
   }

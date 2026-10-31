@@ -34,6 +34,7 @@ Commands ran against an isolated managed development database and API, using sou
 | Expo iOS export | Hermes bundle and DOM material reader exported successfully; this is a bundle check, not native rendering or an IPA |
 | Real API E2E | All 7 scenarios passed, no skips; the three pipeline scenarios also assert no uncaught browser errors |
 | Final 390px document-directory recheck | The affected real API scenario passed again; checks completed search, opaque sheet positioning, separate New/Close targets, creation dialog and focus restoration, plus no horizontal page overflow |
+| Hermes role-binding correction (R07) | 14 core pipeline tests, 3 squad view tests, core/views typechecks and helper lint passed; one new actual-browser/API scenario verifies selection and leader fallback remain valid and saveable |
 | `git diff --check` | Passed |
 
 Pipeline E2E covers both real compilers, source preservation across dialects, dynamic plans, save versus activation, stale squad revisions, fixed v1 material after a v2 edit, document association 409 comparison/retry, idempotent insertion, task grouping/search, authenticated body-link opening, approval races with retained comments, 390px light/dark reading, upstream waits, attempt history, retry and cancellation. Existing document E2E exercises all editing modes, draft recovery, optimistic conflict comparison/copy, actual source CLI revisions and access checks.
@@ -41,6 +42,10 @@ Pipeline E2E covers both real compilers, source preservation across dialects, dy
 Screenshots in `ui-evidence/` come from the actual Web product and authenticated test fixtures. The 390px images are browser viewports, not iPhone screenshots. The issue's approved prototype is the design reference; it is not presented as a product screenshot.
 
 The task-directory capture waits for search completion and the sheet's opening transition to finish. `task-markdown-390.png` replaces an earlier translucent transition capture; `task-markdown-body-390.png` shows the unobstructed body separately. The recheck also fixed overlapping New/Close controls and the nested trigger that previously closed the sheet without opening the creation form.
+
+Hermes role selection adds a missing `roles` declaration alongside the selected state's `by` field. Existing declarations, comments and custom instructions remain in the YAML model. Selecting the leader removes only that state's `by`; declarations and other states' references remain. Canonical helper cases cover absent/empty roles, new and existing roles, repeated selection, and leader fallback. `hermes-role-selected.png` and `hermes-role-leader.png` show the actual single-member squad; both authenticated validation responses have `syntax_valid: true`, `binding_valid: true` and no diagnostics.
+
+PM's independent material/approval replay timed out twice at the default five-second Approve expectation, then passed with a fifteen-second review configuration. That waiting difference is retained separately from R07, which was a reproducible missing-declaration error. The R07 correction did not change the approval scenario or global expectation settings, and did not repeat the original full suites or the accepted 390px work.
 
 ## Acceptance evidence and limits
 

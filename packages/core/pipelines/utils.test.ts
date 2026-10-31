@@ -47,6 +47,72 @@ it("edits Hermes source state while retaining gates, metadata and entry text", (
     bindPipelineRole(source, { ...node, type: "manual" }, "owner"),
   ).toThrow();
 });
+it.each([
+  { name: "missing roles", declaration: "" },
+  { name: "empty roles", declaration: "roles: {} # keep role policy\n" },
+  {
+    name: "another declared role",
+    declaration: "roles:\n  researcher: {} # keep researcher\n",
+  },
+])("declares a selected Hermes role with $name", ({ declaration }) => {
+  const source = `kind: hermes_yaml
+# user workflow
+id: custom-flow
+${declaration}states:
+  review_notes:
+    entry: |
+      Preserve this exact policy.
+      And this second line.
+    artifacts: [reports/context.md]
+    retry: 2
+edges: []
+`;
+  const original = parse(source);
+  const bound = bindPipelineRole(source, node, "reviewer");
+  expect(parse(bound)).toEqual({
+    ...original,
+    roles: { ...original.roles, reviewer: {} },
+    states: {
+      ...original.states,
+      review_notes: { ...original.states.review_notes, by: "reviewer" },
+    },
+  });
+  expect(bound).toContain("# user workflow");
+  if (declaration.includes("#")) {
+    expect(bound).toContain(declaration.split("#")[1]!.trim());
+  }
+});
+it("preserves existing Hermes declarations and other users of a role when rebinding or choosing the leader", () => {
+  const source = `kind: hermes_yaml
+roles:
+  reviewer: &reviewer {} # keep this declaration
+states:
+  review_notes:
+    by: reviewer # keep binding comment
+    entry: Preserve the original instruction.
+  publish:
+    by: reviewer
+    entry: Publish the reviewed result.
+edges: [{from: review_notes, to: publish}]
+`;
+  const original = parse(source);
+  const existing = bindPipelineRole(source, node, "reviewer");
+  expect(parse(existing)).toEqual(original);
+  expect(existing).toContain("&reviewer");
+  expect(existing).toContain("# keep this declaration");
+  expect(existing).toContain("# keep binding comment");
+  const reassigned = bindPipelineRole(existing, node, "writer");
+  const rebound = bindPipelineRole(reassigned, node, "reviewer");
+  expect(parse(rebound).roles).toEqual({ reviewer: {}, writer: {} });
+  expect(parse(rebound).states.publish).toEqual(original.states.publish);
+  const leader = parse(bindPipelineRole(rebound, node, ""));
+  expect(leader.roles).toEqual({ reviewer: {}, writer: {} });
+  expect(leader.states.review_notes).toEqual({
+    entry: original.states.review_notes.entry,
+  });
+  expect(leader.states.publish).toEqual(original.states.publish);
+  expect(leader.edges).toEqual(original.edges);
+});
 it("counts a dependency once when it also supplies materials", () => {
   expect(pipelineDependencies(node)).toEqual(["read_sources"]);
 });
