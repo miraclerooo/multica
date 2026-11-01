@@ -85,6 +85,53 @@
   color: var(--muted-foreground);
   overflow-wrap: anywhere;
 }
+.pipeline-field {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  font: var(--text-caption) / 1.7 var(--font-mono);
+  resize: vertical;
+}
+.pipeline-field:focus-visible, .pipeline-canvas-port:focus-visible, .pipeline-canvas-reconnect:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
+}
+.pipeline-canvas-viewport {
+  position: relative;
+  height: 360px;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+}
+.pipeline-canvas-plane { position: absolute; inset: 0; transform-origin: top left; }
+.pipeline-canvas-lines { position: absolute; left: 0; top: 0; overflow: visible; }
+.pipeline-canvas-edge { stroke: var(--muted-foreground); stroke-width: 1.5; fill: none; }
+.pipeline-canvas-edge.stage { stroke: var(--brand); stroke-dasharray: 6 4; }
+.pipeline-canvas-edge.material { stroke-dasharray: 2 4; }
+.pipeline-canvas-edge.is-selected { stroke: var(--brand); stroke-width: 3; }
+.pipeline-canvas-card { position: absolute; width: 220px; }
+.pipeline-canvas-card .pipeline-node { min-height: 84px; cursor: grab; user-select: none; }
+.pipeline-canvas-manual { border-style: double; border-width: 3px; }
+.pipeline-canvas-port, .pipeline-canvas-reconnect {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 2px solid var(--brand);
+  border-radius: 50%;
+  background: var(--background);
+  z-index: 2;
+  touch-action: none;
+  cursor: crosshair;
+}
+.pipeline-canvas-port { top: 54px; }
+.pipeline-canvas-port.input { left: -8px; }
+.pipeline-canvas-port.output { right: -8px; }
+.pipeline-canvas-port:disabled { cursor: default; opacity: 0.45; }
+.pipeline-canvas-reconnect { background: var(--brand); }
 .pipeline-material {
   display: flex;
   flex-direction: column;

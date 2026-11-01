@@ -11,11 +11,37 @@ import {
   movePipelineDraftScope,
   usePipelineWorkbenchStore,
   editPipelineWorkbench,
+  stepPipelineHistory,
+  usePipelineCanvasStore,
+  editPipelineCanvasLayout,
 } from "./editor";
 afterEach(() => {
   usePipelineReviewStore.getState().clearDraft();
   usePipelineDraftStore.getState().clearDraft();
   usePipelineWorkbenchStore.getState().clearDraft();
+  usePipelineCanvasStore.getState().clearDraft();
+});
+it("shares source history across YAML and canvas edits without rebasing the reviewed catalog", () => {
+  putPipelineDraft("w:s:p", "Canvas edit", "definition", 4, {catalogRevision:2,previousSource:"Original complete YAML"});
+  putPipelineDraft("w:s:p", "YAML edit", "definition", 8, {catalogRevision:7});
+  stepPipelineHistory("w:s:p","undo");
+  expect(usePipelineDraftStore.getState().draft.drafts["w:s:p"]).toMatchObject({source:"Canvas edit",baseRevision:4,catalogRevision:2});
+  stepPipelineHistory("w:s:p","undo");expect(usePipelineDraftStore.getState().draft.drafts["w:s:p"]?.source).toBe("Original complete YAML");
+  stepPipelineHistory("w:s:p","redo");stepPipelineHistory("w:s:p","redo");
+  expect(usePipelineDraftStore.getState().draft.drafts["w:s:p"]?.source).toBe("YAML edit");
+  stepPipelineHistory("w:s:p","undo");putPipelineDraft("w:s:p","New branch of edits");
+  stepPipelineHistory("w:s:p","redo");expect(usePipelineDraftStore.getState().draft.drafts["w:s:p"]?.source).toBe("New branch of edits");
+});
+it("keeps layouts and histories separate between logical pipelines and transfers the new pipeline's preference", () => {
+  putPipelineDraft("w:s:new","new source","",3,{previousSource:""});
+  putPipelineDraft("w:s:other","other source","old",4,{previousSource:"original other"});
+  editPipelineCanvasLayout("w:s:new",{positions:{custom:{x:70,y:90}},viewport:{x:12,y:18,zoom:0.7}});
+  movePipelineDraftScope("w:s:new","w:s:created");
+  stepPipelineHistory("w:s:created","undo");
+  expect(usePipelineDraftStore.getState().draft.drafts["w:s:created"]?.source).toBe("");
+  expect(usePipelineDraftStore.getState().draft.drafts["w:s:other"]?.source).toBe("other source");
+  expect(usePipelineCanvasStore.getState().draft.layouts["w:s:created"]?.positions.custom).toEqual({x:70,y:90});
+  expect(usePipelineCanvasStore.getState().draft.layouts["w:s:new"]).toBeUndefined();
 });
 it("moves alternate dialect drafts and the conversation from a new catalog draft to its stable identity", () => {
   putPipelineDraft("w:s:new:hermes_yaml", "Original alternate dialect");
