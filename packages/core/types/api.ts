@@ -2,9 +2,12 @@ import type { Issue, IssueMetadata, IssueStatus, IssueStatusCategory, IssuePrior
 import type { IssuePropertyValues, PropertyFilterValue } from "./property";
 import type { MemberRole } from "./workspace";
 import type { Project, ProjectStatus } from "./project";
+import type { ExecutionSelection } from "../pipelines/execution";
 
 // Issue API
 export interface CreateIssueRequest {
+  execution?: ExecutionSelection;
+  idempotency_key?: string;
   title: string;
   description?: string;
   status?: IssueStatus;

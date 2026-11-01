@@ -15,6 +15,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/logger"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	"github.com/multica-ai/multica/server/internal/pipeline"
+	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/dbid"
@@ -370,6 +371,7 @@ func (h *Handler) UpdateSquad(w http.ResponseWriter, r *http.Request) {
 		Instructions         *string `json:"instructions"`
 		InstructionsMode     *string `json:"instructions_mode"`
 		PipelineDefinitionID *string `json:"pipeline_definition_id"`
+		PipelineID           *string `json:"pipeline_id"`
 		ExpectedRevision     *int64  `json:"expected_revision"`
 		LeaderID             *string `json:"leader_id"`
 		AvatarURL            *string `json:"avatar_url"`
@@ -421,7 +423,7 @@ func (h *Handler) UpdateSquad(w http.ResponseWriter, r *http.Request) {
 		writePipelineError(w, pipeline.Fail("revision_conflict", "squad revision changed"))
 		return
 	}
-	if (req.InstructionsMode != nil || req.PipelineDefinitionID != nil) && req.ExpectedRevision == nil {
+	if (req.InstructionsMode != nil || req.PipelineDefinitionID != nil || req.PipelineID != nil) && req.ExpectedRevision == nil {
 		writePipelineError(w, pipeline.Fail("revision_conflict", "expected_revision is required to change pipeline configuration"))
 		return
 	}
@@ -473,12 +475,39 @@ func (h *Handler) UpdateSquad(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update squad")
 		return
 	}
-	if req.InstructionsMode != nil || req.PipelineDefinitionID != nil {
+	if req.InstructionsMode != nil || req.PipelineDefinitionID != nil || req.PipelineID != nil {
 		mode := lockedSquad.InstructionsMode
 		if req.InstructionsMode != nil {
 			mode = *req.InstructionsMode
 		}
 		definitionID := lockedSquad.PipelineDefinitionID
+		if req.PipelineID != nil {
+			if req.InstructionsMode != nil && *req.InstructionsMode != "pipeline" {
+				writePipelineError(w, pipeline.Fail("invalid_execution_selection", "pipeline_id requires pipeline mode"))
+				return
+			}
+			if req.PipelineDefinitionID != nil {
+				writePipelineError(w, pipeline.Fail("invalid_execution_selection", "choose pipeline_id or pipeline_definition_id"))
+				return
+			}
+			id, ok := parseUUIDOrBadRequest(w, *req.PipelineID, "pipeline_id")
+			if !ok {
+				return
+			}
+			p, e := qtx.GetSquadPipeline(r.Context(), db.GetSquadPipelineParams{ID: id, WorkspaceID: wsUUID})
+			if e != nil || p.SquadID != squad.ID {
+				writePipelineError(w, pipeline.Fail("pipeline_not_owned", "pipeline must belong to this squad"))
+				return
+			}
+			if !p.ExecutableDefinitionID.Valid {
+				writePipelineError(w, pipeline.Fail("definition_not_executable", "pipeline has no executable version"))
+				return
+			}
+			definitionID = p.ExecutableDefinitionID
+			if req.InstructionsMode == nil {
+				mode = "pipeline"
+			}
+		}
 		if req.PipelineDefinitionID != nil {
 			var valid bool
 			definitionID, valid = parseUUIDOrBadRequest(w, *req.PipelineDefinitionID, "pipeline_definition_id")
@@ -1257,15 +1286,22 @@ func (h *Handler) enqueueSquadLeaderTask(ctx context.Context, issue db.Issue, tr
 		return false
 	}
 
-	if squad.InstructionsMode != "markdown" && squad.InstructionsMode != "pipeline" {
+	if service.SquadExecutionMode(issue, squad) != "markdown" && service.SquadExecutionMode(issue, squad) != "pipeline" {
 		return false
 	}
-	if squad.InstructionsMode == "pipeline" {
+	if service.SquadExecutionMode(issue, squad) == "pipeline" {
 		user := authorID
 		if authorType != "member" {
 			user = uuidToString(h.TaskService.OriginatorForIssueTask(ctx, issue, pgtype.UUID{}))
 		}
-		_, err := h.Pipelines.Start(ctx, issue, uuidToString(squad.ID), "", user, fmt.Sprintf("assignment:%d", issue.Revision), handoffNote)
+		key := fmt.Sprintf("assignment:%d", issue.Revision)
+		if e := service.ExecutionForIssue(issue); e != nil {
+			if e.State == "waiting_runtime" {
+				return false
+			}
+			key = "execution:" + uuidToString(issue.ID)
+		}
+		_, err := h.Pipelines.Start(ctx, issue, uuidToString(squad.ID), "", user, key, handoffNote)
 		if err != nil {
 			slog.Warn("start assigned pipeline", "error", err, "issue_id", uuidToString(issue.ID))
 		}

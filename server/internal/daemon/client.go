@@ -202,6 +202,9 @@ func daemonHTTPClientCapabilities() string {
 
 func daemonCommonCapabilities() []string {
 	return []string{
+		protocol.CapabilityPipelineSelectionV1,
+		protocol.CapabilityPipelineCatalogV1,
+		protocol.CapabilityRuntimeBuildReportV1,
 		protocol.DaemonCapabilitySkillBundlesV1,
 		protocol.DaemonCapabilityCoalescedCommentsV1,
 		protocol.DaemonCapabilityExecutionManifestV1,

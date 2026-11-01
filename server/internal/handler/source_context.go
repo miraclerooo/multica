@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/logger"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
+	"github.com/multica-ai/multica/server/internal/pipeline"
 	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
 	agentpkg "github.com/multica-ai/multica/server/pkg/agent"
@@ -670,7 +671,10 @@ func (h *Handler) createManualCommentSubIssue(w http.ResponseWriter, r *http.Req
 		}
 		assigneeID = parsed
 	}
-	if code, message := h.validateAssigneePair(r.Context(), r, util.UUIDToString(workspaceID), assigneeType, assigneeID); code != 0 {
+	if !validateExecutionIDs(w, input.Execution) {
+		return errSourceContextResponseWritten
+	}
+	if code, message := h.validateAssigneePair(r.Context(), r, util.UUIDToString(workspaceID), assigneeType, assigneeID, true); code != 0 {
 		writeError(w, code, message)
 		return errSourceContextResponseWritten
 	}
@@ -721,6 +725,7 @@ func (h *Handler) createManualCommentSubIssue(w http.ResponseWriter, r *http.Req
 	}
 	prefix := h.getIssuePrefix(r.Context(), workspaceID)
 	result, err := h.IssueService.Create(r.Context(), service.IssueCreateParams{
+		Execution: input.Execution, ExecutionUserID: util.UUIDToString(userID), IdempotencyKey: input.IdempotencyKey,
 		WorkspaceID: workspaceID, Title: title, Description: ptrToText(input.Description), Status: status, Priority: priority,
 		AssigneeType: assigneeType, AssigneeID: assigneeID, CreatorType: "member", CreatorID: userID,
 		ParentIssueID: capture.SourceIssueID, ProjectID: projectID, StartDate: startDate, DueDate: dueDate,
@@ -866,6 +871,11 @@ func (h *Handler) createAgentCommentSubIssue(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *Handler) writeSourceContextError(w http.ResponseWriter, err error, limits service.SourceContextLimitUsage) {
+	var executionError *pipeline.Error
+	if errors.As(err, &executionError) {
+		writePipelineError(w, err)
+		return
+	}
 	if writeIssueLimitReached(w, err) {
 		return
 	}

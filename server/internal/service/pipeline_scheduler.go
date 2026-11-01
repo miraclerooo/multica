@@ -114,6 +114,12 @@ func (s *PipelineService) Reconcile(ctx context.Context, row db.PipelineRun) err
 				job.Set("running", "")
 			}
 		}
+		for i := range run.Jobs {
+			job := &run.Jobs[i]
+			if job.Status == "blocked" && job.Reason == "runtime_not_ready" && job.Current() == nil {
+				job.Set("pending", "")
+			}
+		}
 		run.Advance()
 		for i := range run.Jobs {
 			job := &run.Jobs[i]
@@ -128,6 +134,16 @@ func (s *PipelineService) Reconcile(ctx context.Context, row db.PipelineRun) err
 			if s.CanInvoke == nil || !s.CanInvoke(ctx, agent, run.CreatorID, run.WorkspaceID) {
 				job.Set("blocked", "invocation_forbidden")
 				continue
+			}
+			if ExecutionForIssue(issue) != nil {
+				readiness, e := s.ExecutionReadiness(ctx, q, run.WorkspaceID, map[string]string{job.Node.ID: job.ExecutorID})
+				if e != nil {
+					return e
+				}
+				if !readiness.Ready {
+					job.Set("blocked", "runtime_not_ready")
+					continue
+				}
 			}
 			if !agent.RuntimeID.Valid {
 				job.Set("blocked", "runtime_unavailable")

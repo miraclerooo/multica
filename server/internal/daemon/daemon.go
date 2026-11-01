@@ -669,6 +669,9 @@ type Daemon struct {
 	// restarted the daemon yet (a task was running at the barrier check). Set
 	// and cleared by trySelfReload, read by /health. Diagnostic only.
 	reloadPendingReason atomic.Pointer[string]
+	buildReportMu       sync.Mutex
+	buildReportAt       time.Time
+	buildReportCache    protocol.RuntimeBuildReport
 
 	// claimMu guards pauseClaims and claimsInFlight. It is held only for the
 	// microseconds it takes to make a decision; ClaimTask itself runs without
@@ -2945,6 +2948,7 @@ func (d *Daemon) registerRuntimesForWorkspaceBatchLocked(ctx context.Context, wo
 		"legacy_daemon_ids": d.cfg.LegacyDaemonIDs,
 		"device_name":       d.cfg.DeviceName,
 		"cli_version":       d.cfg.CLIVersion,
+		"build_report":      d.runtimeBuildReport(ctx),
 		"launched_by":       d.cfg.LaunchedBy,
 		"runtimes":          runtimes,
 		"failed_profiles":   failedProfiles,
@@ -2990,6 +2994,7 @@ func (d *Daemon) registerBuiltinRuntimesForWorkspaceLocked(ctx context.Context, 
 		"legacy_daemon_ids": d.cfg.LegacyDaemonIDs,
 		"device_name":       d.cfg.DeviceName,
 		"cli_version":       d.cfg.CLIVersion,
+		"build_report":      d.runtimeBuildReport(ctx),
 		"launched_by":       d.cfg.LaunchedBy,
 		"runtimes":          runtimes,
 		// Deliberately empty: this call carries no profiles, so it must not
@@ -4476,6 +4481,11 @@ func (d *Daemon) runRuntimeHeartbeat(ctx context.Context, rid string) {
 // runHeartbeatTick returns true when the HTTP heartbeat hit a transient
 // failure that should count toward stale idle-connection cleanup.
 func (d *Daemon) runHeartbeatTick(ctx context.Context, rid string) bool {
+	if d.cfg.ReportBuildContract {
+		// This read-only report also runs when WS heartbeats suppress HTTP
+		// liveness polling. It neither updates nor restarts the installation.
+		_ = d.client.postJSON(ctx, "/api/daemon/runtimes/"+rid+"/build-report", d.runtimeBuildReport(ctx), nil)
+	}
 	// Skip HTTP heartbeat for runtimes that successfully acked a recent
 	// WebSocket heartbeat. The WS path keeps last_seen_at fresh and delivers
 	// actions, so the HTTP write would be a duplicate DB update. If the WS

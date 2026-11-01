@@ -12,8 +12,8 @@ import (
 )
 
 const createPipelineDefinition = `-- name: CreatePipelineDefinition :one
-INSERT INTO pipeline_definition (id,workspace_id,squad_id,revision,kind,source,source_hash,compiler_version,plan,creator_id,idempotency_key)
-VALUES ($1,$2,$3,(SELECT COALESCE(MAX(d.revision),0)+1 FROM pipeline_definition d WHERE d.workspace_id=$2 AND d.squad_id=$3),$4,$5,$6,$7,$8,$9,$10) RETURNING id, workspace_id, squad_id, revision, kind, source, source_hash, compiler_version, plan, creator_id, idempotency_key, created_at
+INSERT INTO pipeline_definition (id,workspace_id,squad_id,revision,kind,source,source_hash,compiler_version,plan,creator_id,idempotency_key,pipeline_id)
+VALUES ($1,$2,$3,(SELECT COALESCE(MAX(d.revision),0)+1 FROM pipeline_definition d WHERE d.workspace_id=$2 AND d.pipeline_id=$11),$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id, workspace_id, squad_id, revision, kind, source, source_hash, compiler_version, plan, creator_id, idempotency_key, created_at, pipeline_id
 `
 
 type CreatePipelineDefinitionParams struct {
@@ -27,6 +27,7 @@ type CreatePipelineDefinitionParams struct {
 	Plan            []byte      `json:"plan"`
 	CreatorID       pgtype.UUID `json:"creator_id"`
 	IdempotencyKey  string      `json:"idempotency_key"`
+	PipelineID      pgtype.UUID `json:"pipeline_id"`
 }
 
 func (q *Queries) CreatePipelineDefinition(ctx context.Context, arg CreatePipelineDefinitionParams) (PipelineDefinition, error) {
@@ -41,6 +42,7 @@ func (q *Queries) CreatePipelineDefinition(ctx context.Context, arg CreatePipeli
 		arg.Plan,
 		arg.CreatorID,
 		arg.IdempotencyKey,
+		arg.PipelineID,
 	)
 	var i PipelineDefinition
 	err := row.Scan(
@@ -56,6 +58,7 @@ func (q *Queries) CreatePipelineDefinition(ctx context.Context, arg CreatePipeli
 		&i.CreatorID,
 		&i.IdempotencyKey,
 		&i.CreatedAt,
+		&i.PipelineID,
 	)
 	return i, err
 }
@@ -171,7 +174,7 @@ func (q *Queries) GetLatestPipelineRunForIssue(ctx context.Context, arg GetLates
 }
 
 const getPipelineDefinition = `-- name: GetPipelineDefinition :one
-SELECT id, workspace_id, squad_id, revision, kind, source, source_hash, compiler_version, plan, creator_id, idempotency_key, created_at FROM pipeline_definition WHERE id=$1 AND workspace_id=$2
+SELECT id, workspace_id, squad_id, revision, kind, source, source_hash, compiler_version, plan, creator_id, idempotency_key, created_at, pipeline_id FROM pipeline_definition WHERE id=$1 AND workspace_id=$2
 `
 
 type GetPipelineDefinitionParams struct {
@@ -195,12 +198,13 @@ func (q *Queries) GetPipelineDefinition(ctx context.Context, arg GetPipelineDefi
 		&i.CreatorID,
 		&i.IdempotencyKey,
 		&i.CreatedAt,
+		&i.PipelineID,
 	)
 	return i, err
 }
 
 const getPipelineDefinitionByKey = `-- name: GetPipelineDefinitionByKey :one
-SELECT id, workspace_id, squad_id, revision, kind, source, source_hash, compiler_version, plan, creator_id, idempotency_key, created_at FROM pipeline_definition WHERE workspace_id=$1 AND squad_id=$2 AND idempotency_key=$3
+SELECT id, workspace_id, squad_id, revision, kind, source, source_hash, compiler_version, plan, creator_id, idempotency_key, created_at, pipeline_id FROM pipeline_definition WHERE workspace_id=$1 AND squad_id=$2 AND idempotency_key=$3
 `
 
 type GetPipelineDefinitionByKeyParams struct {
@@ -225,6 +229,7 @@ func (q *Queries) GetPipelineDefinitionByKey(ctx context.Context, arg GetPipelin
 		&i.CreatorID,
 		&i.IdempotencyKey,
 		&i.CreatedAt,
+		&i.PipelineID,
 	)
 	return i, err
 }
@@ -334,7 +339,7 @@ func (q *Queries) ListActivePipelineRuns(ctx context.Context, arg ListActivePipe
 }
 
 const listPipelineDefinitions = `-- name: ListPipelineDefinitions :many
-SELECT id, workspace_id, squad_id, revision, kind, source, source_hash, compiler_version, plan, creator_id, idempotency_key, created_at FROM pipeline_definition WHERE workspace_id=$1 AND squad_id=$2 ORDER BY revision DESC LIMIT $3 OFFSET $4
+SELECT id, workspace_id, squad_id, revision, kind, source, source_hash, compiler_version, plan, creator_id, idempotency_key, created_at, pipeline_id FROM pipeline_definition WHERE workspace_id=$1 AND squad_id=$2 ORDER BY revision DESC,id DESC LIMIT $3 OFFSET $4
 `
 
 type ListPipelineDefinitionsParams struct {
@@ -371,6 +376,7 @@ func (q *Queries) ListPipelineDefinitions(ctx context.Context, arg ListPipelineD
 			&i.CreatorID,
 			&i.IdempotencyKey,
 			&i.CreatedAt,
+			&i.PipelineID,
 		); err != nil {
 			return nil, err
 		}
@@ -436,7 +442,7 @@ func (q *Queries) ListPipelineRuns(ctx context.Context, arg ListPipelineRunsPara
 }
 
 const lockPipelineIssue = `-- name: LockPipelineIssue :one
-SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id FROM issue WHERE id=$1 AND workspace_id=$2 FOR UPDATE
+SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id, execution FROM issue WHERE id=$1 AND workspace_id=$2 FOR UPDATE
 `
 
 type LockPipelineIssueParams struct {
@@ -478,6 +484,7 @@ func (q *Queries) LockPipelineIssue(ctx context.Context, arg LockPipelineIssuePa
 		&i.LastActivityAt,
 		&i.TriageState,
 		&i.DuplicateOfIssueID,
+		&i.Execution,
 	)
 	return i, err
 }

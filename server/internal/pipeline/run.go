@@ -78,29 +78,32 @@ type Job struct {
 	Decision       *Decision `json:"decision"`
 }
 type Run struct {
-	ID               string            `json:"id"`
-	WorkspaceID      string            `json:"workspace_id"`
-	IssueID          string            `json:"issue_id"`
-	SquadID          string            `json:"squad_id"`
-	DefinitionID     string            `json:"definition_id"`
-	CreatorID        string            `json:"creator_id"`
-	Revision         int64             `json:"revision"`
-	Status           string            `json:"status"`
-	StopStatus       string            `json:"stop_status,omitempty"`
-	Reason           string            `json:"reason"`
-	Plan             Plan              `json:"plan"`
-	Policy           string            `json:"policy"`
-	IssueTitle       string            `json:"issue_title"`
-	IssueDescription string            `json:"issue_description"`
-	IssueRevision    int64             `json:"issue_revision"`
-	ProjectID        string            `json:"project_id"`
-	WorkflowID       string            `json:"workflow_id"`
-	WorkflowStep     string            `json:"workflow_step"`
-	ProjectedStatus  string            `json:"projected_status"`
-	Jobs             []Job             `json:"jobs"`
-	Operations       map[string]string `json:"operations"`
-	CreatedAt        string            `json:"created_at"`
-	UpdatedAt        string            `json:"updated_at"`
+	PipelineID         string            `json:"pipeline_id,omitempty"`
+	PipelineName       string            `json:"pipeline_name,omitempty"`
+	DefinitionRevision int64             `json:"definition_revision,omitempty"`
+	ID                 string            `json:"id"`
+	WorkspaceID        string            `json:"workspace_id"`
+	IssueID            string            `json:"issue_id"`
+	SquadID            string            `json:"squad_id"`
+	DefinitionID       string            `json:"definition_id"`
+	CreatorID          string            `json:"creator_id"`
+	Revision           int64             `json:"revision"`
+	Status             string            `json:"status"`
+	StopStatus         string            `json:"stop_status,omitempty"`
+	Reason             string            `json:"reason"`
+	Plan               Plan              `json:"plan"`
+	Policy             string            `json:"policy"`
+	IssueTitle         string            `json:"issue_title"`
+	IssueDescription   string            `json:"issue_description"`
+	IssueRevision      int64             `json:"issue_revision"`
+	ProjectID          string            `json:"project_id"`
+	WorkflowID         string            `json:"workflow_id"`
+	WorkflowStep       string            `json:"workflow_step"`
+	ProjectedStatus    string            `json:"projected_status"`
+	Jobs               []Job             `json:"jobs"`
+	Operations         map[string]string `json:"operations"`
+	CreatedAt          string            `json:"created_at"`
+	UpdatedAt          string            `json:"updated_at"`
 }
 
 func NewRun(plan Plan, bindings map[string]string) Run {

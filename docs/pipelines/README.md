@@ -1,5 +1,9 @@
 # Squad pipeline API and CLI (YANF-7)
 
+For independent named pipelines, atomic task selection, environment readiness,
+release-channel configuration, and migration 613–618, see the
+[v1.5 contract](v1.5.md). The underlying v1.4 engine/document contract follows.
+
 This change supplies the server, shared core and CLI contract for v1.4
 (v1.2 execution semantics plus task-associated Markdown documents). The pipeline
 and document UIs are separate deliveries. Both dialects are executable:

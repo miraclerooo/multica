@@ -13,6 +13,7 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/cli"
 	"github.com/multica-ai/multica/server/internal/pipeline"
+	"github.com/multica-ai/multica/server/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -33,6 +34,8 @@ func newPipelineCommand() *cobra.Command {
 	validate.Flags().String("squad", "", "Check the referenced roles in this squad")
 	create := add(root, "create <file|->", "create", 1)
 	create.Flags().String("squad", "", "Owning squad ID (required)")
+	create.Flags().String("pipeline", "", "Append to this logical pipeline; omit for the legacy squad history")
+	create.Flags().Int64("expected-pipeline-revision", 0, "Catalog revision for optimistic version saving")
 	create.Flags().String("idempotency-key", "", "Idempotency key (required)")
 	_ = create.MarkFlagRequired("squad")
 	_ = create.MarkFlagRequired("idempotency-key")
@@ -41,6 +44,34 @@ func newPipelineCommand() *cobra.Command {
 	list.Flags().String("squad", "", "Owning squad ID (required)")
 	_ = list.MarkFlagRequired("squad")
 	pipelinePageFlags(list)
+	list.Flags().String("pipeline", "", "Filter versions by logical pipeline ID")
+	catalog := &cobra.Command{Use: "catalog", Short: "Manage independent named pipelines"}
+	root.AddCommand(catalog)
+	cc := add(catalog, "create <file|->", "catalog create", 1)
+	for _, f := range []string{"squad", "name", "idempotency-key"} {
+		cc.Flags().String(f, "", f+" (required)")
+		_ = cc.MarkFlagRequired(f)
+	}
+	cl := add(catalog, "list", "catalog list", 0)
+	cl.Flags().String("squad", "", "Owning squad ID (required)")
+	_ = cl.MarkFlagRequired("squad")
+	pipelinePageFlags(cl)
+	add(catalog, "get <pipeline-id>", "catalog get", 1)
+	rename := add(catalog, "rename <pipeline-id>", "catalog rename", 1)
+	rename.Flags().String("name", "", "New name (required)")
+	rename.Flags().Int64("expected-revision", 0, "Catalog revision (required)")
+	_ = rename.MarkFlagRequired("name")
+	_ = rename.MarkFlagRequired("expected-revision")
+	preflight := add(root, "preflight", "preflight", 0)
+	preflight.Flags().String("squad", "", "Target squad (required)")
+	_ = preflight.MarkFlagRequired("squad")
+	preflight.Flags().String("execution", "default", "default, markdown or pipeline")
+	preflight.Flags().String("pipeline", "", "Logical pipeline ID")
+	preflight.Flags().String("definition", "", "Exact version ID (optional)")
+	execution := &cobra.Command{Use: "execution", Short: "Inspect or start an issue's frozen selection"}
+	root.AddCommand(execution)
+	add(execution, "get <issue>", "execution get", 1)
+	add(execution, "start <issue>", "execution start", 1)
 	runs := &cobra.Command{Use: "run", Short: "Work with persistent pipeline runs"}
 	root.AddCommand(runs)
 	runCreate := add(runs, "create", "run create", 0)
@@ -136,6 +167,39 @@ func runPipeline(cmd *cobra.Command, args []string, op string) error {
 		endpoint = "/api/pipeline-runs/" + url.PathEscape(args[0]) + "/jobs/" + url.PathEscape(args[1])
 	}
 	switch op {
+	case "catalog create":
+		source, e := pipelineFile(cmd, args[0])
+		if e != nil {
+			return e
+		}
+		endpoint = "/api/pipelines/catalog"
+		method = "POST"
+		body = map[string]any{"name": pipelineFlag(cmd, "name"), "squad_id": pipelineFlag(cmd, "squad"), "source": source, "idempotency_key": pipelineFlag(cmd, "idempotency-key")}
+	case "catalog list":
+		endpoint = "/api/pipelines/catalog"
+		q.Set("squad_id", pipelineFlag(cmd, "squad"))
+	case "catalog get":
+		endpoint = "/api/pipelines/catalog/" + url.PathEscape(args[0])
+	case "catalog rename":
+		endpoint = "/api/pipelines/catalog/" + url.PathEscape(args[0])
+		method = "PATCH"
+		rev, _ := cmd.Flags().GetInt64("expected-revision")
+		body = map[string]any{"name": pipelineFlag(cmd, "name"), "expected_revision": rev}
+	case "preflight":
+		selection, e := pipelineExecutionFlags(cmd)
+		if e != nil {
+			return e
+		}
+		endpoint = "/api/pipelines/preflight"
+		method = "POST"
+		body = map[string]any{"squad_id": pipelineFlag(cmd, "squad"), "execution": selection}
+	case "execution get", "execution start":
+		endpoint = "/api/issues/" + url.PathEscape(args[0]) + "/execution"
+		if op == "execution start" {
+			endpoint += "/start"
+			method = "POST"
+			body = map[string]any{}
+		}
 	case "capabilities":
 		endpoint = "/api/pipelines/capabilities"
 	case "validate", "create":
@@ -152,6 +216,13 @@ func runPipeline(cmd *cobra.Command, args []string, op string) error {
 		if op == "create" {
 			endpoint = "/api/pipelines/definitions"
 			payload["idempotency_key"] = pipelineFlag(cmd, "idempotency-key")
+			if id := pipelineFlag(cmd, "pipeline"); id != "" {
+				payload["pipeline_id"] = id
+			}
+			if cmd.Flags().Changed("expected-pipeline-revision") {
+				v, _ := cmd.Flags().GetInt64("expected-pipeline-revision")
+				payload["expected_pipeline_revision"] = v
+			}
 		}
 		body = payload
 	case "get":
@@ -159,6 +230,9 @@ func runPipeline(cmd *cobra.Command, args []string, op string) error {
 	case "list":
 		endpoint = "/api/pipelines/definitions"
 		q.Set("squad_id", pipelineFlag(cmd, "squad"))
+		if id := pipelineFlag(cmd, "pipeline"); id != "" {
+			q.Set("pipeline_id", id)
+		}
 	case "run create":
 		endpoint = "/api/pipeline-runs"
 		method = "POST"
@@ -244,6 +318,8 @@ func runPipeline(cmd *cobra.Command, args []string, op string) error {
 	var raw json.RawMessage
 	if method == "POST" {
 		err = client.PostJSON(ctx, endpoint, body, &raw)
+	} else if method == "PATCH" {
+		err = client.PatchJSON(ctx, endpoint, body, &raw)
 	} else {
 		err = client.GetJSON(ctx, endpoint, &raw)
 	}
@@ -271,6 +347,43 @@ func runPipeline(cmd *cobra.Command, args []string, op string) error {
 		if !v.SyntaxValid || (v.BindingValid != nil && !*v.BindingValid) {
 			return fmt.Errorf("pipeline validation failed")
 		}
+	}
+	return nil
+}
+
+func pipelineExecutionFlags(cmd *cobra.Command) (map[string]string, error) {
+	mode := pipelineFlag(cmd, "execution")
+	if mode != "default" && mode != "markdown" && mode != "pipeline" {
+		return nil, pipeline.Fail("invalid_execution_selection", "--execution must be default, markdown or pipeline")
+	}
+	selection := map[string]string{"mode": mode}
+	for flag, field := range map[string]string{"pipeline": "pipeline_id", "definition": "definition_id"} {
+		if id := pipelineFlag(cmd, flag); id != "" {
+			if mode != "pipeline" {
+				return nil, pipeline.Fail("invalid_execution_selection", "--pipeline and --definition require --execution pipeline")
+			}
+			u, err := util.ParseUUID(id)
+			if err != nil {
+				return nil, pipeline.Fail("invalid_execution_selection", "--"+flag+" must be a UUID")
+			}
+			selection[field] = util.UUIDToString(u)
+		}
+	}
+	if mode == "pipeline" && selection["pipeline_id"] == "" {
+		return nil, pipeline.Fail("invalid_execution_selection", "--execution pipeline requires --pipeline")
+	}
+	return selection, nil
+}
+
+func requirePipelineSelectionAPI(ctx context.Context, client *cli.APIClient) error {
+	var capabilities struct {
+		Features map[string]bool `json:"features"`
+	}
+	if err := client.GetJSON(ctx, "/api/pipelines/capabilities", &capabilities); err != nil {
+		return err
+	}
+	if !capabilities.Features["task_execution_selection"] {
+		return pipeline.Fail("unsupported_capability", "server does not support atomic task execution selection; update the server before creating this issue")
 	}
 	return nil
 }

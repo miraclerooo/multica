@@ -56,6 +56,7 @@ export interface CreateSquadRequest {
 }
 
 export interface UpdateSquadRequest {
+  pipeline_id?: string;
   instructions_mode?: "markdown" | "pipeline";
   pipeline_definition_id?: string;
   expected_revision?: number;

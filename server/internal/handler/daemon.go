@@ -311,10 +311,11 @@ type DaemonRegisterRequest struct {
 	// may have registered under before switching to a persistent UUID. The
 	// handler merges any matching runtime rows into the new row so agents
 	// and tasks keep working without manual intervention.
-	LegacyDaemonIDs []string `json:"legacy_daemon_ids"`
-	DeviceName      string   `json:"device_name"`
-	CLIVersion      string   `json:"cli_version"` // multica CLI version
-	LaunchedBy      string   `json:"launched_by"` // "desktop" when spawned by the Electron app
+	LegacyDaemonIDs []string                     `json:"legacy_daemon_ids"`
+	DeviceName      string                       `json:"device_name"`
+	CLIVersion      string                       `json:"cli_version"` // multica CLI version
+	BuildReport     *protocol.RuntimeBuildReport `json:"build_report,omitempty"`
+	LaunchedBy      string                       `json:"launched_by"` // "desktop" when spawned by the Electron app
 	Runtimes        []struct {
 		Name        string `json:"name"`
 		RuntimeMode string `json:"runtime_mode,omitempty"`
@@ -766,10 +767,12 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 		// same signal the claim path uses, instead of re-deriving it from a
 		// version string (MUL-5707).
 		metadata, _ := json.Marshal(map[string]any{
-			"version":      runtime.Version,
-			"cli_version":  req.CLIVersion,
-			"launched_by":  req.LaunchedBy,
-			"capabilities": requestClientCapabilities(r),
+			"version":         runtime.Version,
+			"cli_version":     req.CLIVersion,
+			"launched_by":     req.LaunchedBy,
+			"capabilities":    requestClientCapabilities(r),
+			"build_report":    req.BuildReport,
+			"build_report_at": time.Now().UTC().Format(time.RFC3339Nano),
 		})
 
 		var registered db.AgentRuntime

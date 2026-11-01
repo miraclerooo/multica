@@ -24,6 +24,13 @@ import (
 
 func (h *Handler) PipelineRoutes(r chi.Router) {
 	r.Get("/api/pipelines/capabilities", h.PipelineCapabilities)
+	r.Get("/api/pipelines/catalog", h.ListPipelineCatalog)
+	r.Post("/api/pipelines/catalog", h.CreatePipelineCatalog)
+	r.Get("/api/pipelines/catalog/{pipelineId}", h.GetPipelineCatalog)
+	r.Patch("/api/pipelines/catalog/{pipelineId}", h.RenamePipelineCatalog)
+	r.Post("/api/pipelines/preflight", h.PreflightPipelineExecution)
+	r.Post("/api/issues/{id}/execution/start", h.StartIssueExecution)
+	r.Get("/api/issues/{id}/execution", h.GetIssueExecution)
 	r.Post("/api/pipelines/validate", h.ValidatePipeline)
 	r.Get("/api/pipelines/definitions", h.ListPipelineDefinitions)
 	r.Post("/api/pipelines/definitions", h.CreatePipelineDefinition)
@@ -48,9 +55,9 @@ func writePipelineError(w http.ResponseWriter, err error) {
 		switch e.Code {
 		case "approval_forbidden", "report_forbidden", "invocation_forbidden":
 			status = 403
-		case "job_not_found", "definition_not_owned":
+		case "job_not_found", "definition_not_owned", "pipeline_not_owned":
 			status = 404
-		case "invalid_definition", "invalid_result", "invalid_artifact", "report_required", "reason_required", "invalid_decision", "idempotency_key_required":
+		case "invalid_definition", "invalid_result", "invalid_artifact", "report_required", "reason_required", "invalid_decision", "idempotency_key_required", "invalid_pipeline_name", "invalid_execution_selection":
 			status = 422
 		}
 		writeJSON(w, status, e)
@@ -143,7 +150,7 @@ func (h *Handler) ValidatePipeline(w http.ResponseWriter, r *http.Request) {
 }
 
 func pipelineDefinitionResponse(d db.PipelineDefinition) map[string]any {
-	return map[string]any{"id": uuidToString(d.ID), "workspace_id": uuidToString(d.WorkspaceID), "squad_id": uuidToString(d.SquadID), "revision": d.Revision, "kind": d.Kind, "source": d.Source, "source_hash": d.SourceHash, "compiler_version": d.CompilerVersion, "plan": json.RawMessage(d.Plan), "creator_id": uuidToString(d.CreatorID), "created_at": timestampToString(d.CreatedAt)}
+	return map[string]any{"id": uuidToString(d.ID), "workspace_id": uuidToString(d.WorkspaceID), "squad_id": uuidToString(d.SquadID), "pipeline_id": uuidToString(d.PipelineID), "revision": d.Revision, "kind": d.Kind, "source": d.Source, "source_hash": d.SourceHash, "compiler_version": d.CompilerVersion, "plan": json.RawMessage(d.Plan), "creator_id": uuidToString(d.CreatorID), "created_at": timestampToString(d.CreatedAt)}
 }
 
 func (h *Handler) CreatePipelineDefinition(w http.ResponseWriter, r *http.Request) {
@@ -152,17 +159,24 @@ func (h *Handler) CreatePipelineDefinition(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	var req struct {
-		Source           string `json:"source"`
-		SquadID          string `json:"squad_id"`
-		IdempotencyKey   string `json:"idempotency_key"`
-		Activate         bool   `json:"activate"`
-		ExpectedRevision int64  `json:"expected_revision"`
+		Source                   string `json:"source"`
+		SquadID                  string `json:"squad_id"`
+		IdempotencyKey           string `json:"idempotency_key"`
+		Activate                 bool   `json:"activate"`
+		ExpectedRevision         int64  `json:"expected_revision"`
+		PipelineID               string `json:"pipeline_id"`
+		ExpectedPipelineRevision *int64 `json:"expected_pipeline_revision"`
 	}
 	if !decodePipelineBody(w, r, &req) {
 		return
 	}
 	if id := chi.URLParam(r, "id"); id != "" {
 		req.SquadID = id
+	}
+	if req.PipelineID != "" {
+		if _, ok := parseUUIDOrBadRequest(w, req.PipelineID, "pipeline_id"); !ok {
+			return
+		}
 	}
 	id, ok := parseUUIDOrBadRequest(w, req.SquadID, "squad_id")
 	if !ok {
@@ -182,7 +196,7 @@ func (h *Handler) CreatePipelineDefinition(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, 422, map[string]any{"code": "invalid_definition", "error": "source does not compile", "validation": v})
 		return
 	}
-	d, err := h.Pipelines.SaveDefinition(r.Context(), ws, req.SquadID, uuidToString(member.UserID), req.Source, req.IdempotencyKey, req.Activate, req.ExpectedRevision)
+	d, err := h.Pipelines.SaveDefinition(r.Context(), ws, req.SquadID, uuidToString(member.UserID), req.Source, req.IdempotencyKey, req.Activate, req.ExpectedRevision, service.PipelineSaveOptions{PipelineID: req.PipelineID, ExpectedPipelineRevision: req.ExpectedPipelineRevision})
 	if err != nil {
 		writePipelineError(w, err)
 		return
@@ -223,6 +237,18 @@ func (h *Handler) ListPipelineDefinitions(w http.ResponseWriter, r *http.Request
 	}
 	limit, offset := pipelinePage(r)
 	rows, err := h.Queries.ListPipelineDefinitions(r.Context(), db.ListPipelineDefinitionsParams{WorkspaceID: parseUUID(ws), SquadID: id, Limit: limit, Offset: offset})
+	if catalogID := r.URL.Query().Get("pipeline_id"); catalogID != "" {
+		pid, ok := parseUUIDOrBadRequest(w, catalogID, "pipeline_id")
+		if !ok {
+			return
+		}
+		p, e := h.Queries.GetSquadPipeline(r.Context(), db.GetSquadPipelineParams{ID: pid, WorkspaceID: parseUUID(ws)})
+		if e != nil || p.SquadID != id {
+			writePipelineError(w, pipeline.Fail("pipeline_not_owned", "pipeline must belong to this squad"))
+			return
+		}
+		rows, err = h.Queries.ListCatalogDefinitions(r.Context(), db.ListCatalogDefinitionsParams{WorkspaceID: parseUUID(ws), PipelineID: pid, Limit: limit, Offset: offset})
+	}
 	if err != nil {
 		writePipelineError(w, err)
 		return
@@ -540,6 +566,7 @@ func (h *Handler) initPipelines(github *ghsnapshot.Client) {
 		_ = reader.Close()
 		return true
 	}}
+	h.Pipelines.CanInvokeMarkdown = h.canInvokeAgent
 	h.Pipelines.RepositoryFile = func(ctx context.Context, ws, user, repo, path, ref string) (string, []byte, error) {
 		if _, err := h.getWorkspaceMember(ctx, user, ws); err != nil {
 			return "", nil, err
@@ -639,7 +666,7 @@ func (h *Handler) pipelineOwnsComments(ctx context.Context, issue db.Issue, sour
 		return true
 	}
 	if issue.AssigneeType.String == "squad" {
-		if squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{ID: issue.AssigneeID, WorkspaceID: issue.WorkspaceID}); err == nil && squad.InstructionsMode != "markdown" {
+		if squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{ID: issue.AssigneeID, WorkspaceID: issue.WorkspaceID}); err == nil && service.SquadExecutionMode(issue, squad) != "markdown" {
 			return true
 		}
 	}

@@ -1,6 +1,7 @@
 import { DocumentCollectionSchema, DocumentSourcesSchema, parseAssociationResponse, type AssociateDocumentInput, type DocumentListInput, type DocumentCollection, type DocumentSources } from "../documents/associations";
 import * as pipelines from "../pipelines/schema";
-import type { ZodType } from "zod";
+import { z, type ZodType } from "zod";
+import { IssueExecutionSchema, type IssueExecution, type ExecutionSelection } from "../pipelines/execution";
 import { DirectoryBrowseRequestSchema, MALFORMED_DIRECTORY_REQUEST, type DirectoryBrowseInput, type DirectoryBrowseRequest } from "../runtimes/directories-schema";
 import { DocumentListSchema, DocumentHistorySchema, ProjectResourceListSchema, parseDocumentResponse, type ProjectDocument, type CreateDocumentInput, type SaveDocumentInput } from "../documents/schema";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
@@ -1442,6 +1443,12 @@ export class ApiClient {
     data: CreateIssueRequest,
     workspaceSlug?: string,
   ): Promise<Issue> {
+    if (data.execution || data.idempotency_key) {
+      const capabilities = await this.getPipelineCapabilities();
+      if (capabilities.features.task_execution_selection !== true) {
+        throw new ApiError("Server does not support atomic task execution selection", 422, "Unprocessable Entity", {code: "unsupported_capability", error: "Update the server before creating this issue"});
+      }
+    }
     const requestedProperties = requestedIssueCreateProperties(data);
     if (requestedProperties) {
       const config = await this.getConfig();
@@ -1470,6 +1477,11 @@ export class ApiClient {
     });
     if (!issue) {
       throw new Error();
+    }
+    if (data.execution && (!issue.execution || issue.execution.requested_mode !== data.execution.mode ||
+        (data.execution.mode === "pipeline" && (issue.execution.pipeline_id?.toLowerCase() !== data.execution.pipeline_id.toLowerCase() ||
+          (data.execution.definition_id && issue.execution.definition_id?.toLowerCase() !== data.execution.definition_id.toLowerCase()))))) {
+      throw new ApiError("Server did not acknowledge the requested execution selection", 502, "Bad Gateway", {code: "execution_snapshot_missing", issue_id: issue.id});
     }
     assertIssueCreatePropertiesSnapshot(requestedProperties, issue);
     return issue;
@@ -4789,6 +4801,40 @@ export class ApiClient {
   async getPipelineCapabilities(): Promise<pipelines.PipelineCapabilities> {
     const endpoint = "/api/pipelines/capabilities";
     return parseWithFallback(await this.fetch<unknown>(endpoint), pipelines.PipelineCapabilitiesSchema, pipelines.EMPTY_PIPELINE_CAPABILITIES, { endpoint });
+  }
+  async listPipelineCatalog(input: pipelines.PipelineListInput) {
+    const endpoint = `/api/pipelines/catalog?${this.pipelineSearch(input)}`;
+    return parseWithFallback(await this.fetch<unknown>(endpoint), pipelines.PipelineCatalogListSchema, {items: [], limit: 50, offset: 0}, {endpoint});
+  }
+  async getPipelineCatalog(id: string): Promise<pipelines.PipelineCatalog | null> {
+    const endpoint = `/api/pipelines/catalog/${encodeURIComponent(id)}`;
+    return parseWithFallback<pipelines.PipelineCatalog | null>(await this.fetch<unknown>(endpoint), pipelines.PipelineCatalogSchema, null, {endpoint});
+  }
+  async createPipelineCatalog(input: pipelines.PipelineCatalogCreateInput): Promise<pipelines.PipelineCatalogCreateResult> {
+    const endpoint = "/api/pipelines/catalog";
+    const result = parseWithFallback<pipelines.PipelineCatalogCreateResult | null>(await this.fetch<unknown>(endpoint, {method: "POST", body: JSON.stringify(input)}), pipelines.PipelineCatalogCreateResultSchema, null, {endpoint});
+    if (!result) throw new ApiError("Invalid pipeline creation response", 502, "Bad Gateway", {code: "malformed_response"});
+    return result;
+  }
+  async renamePipelineCatalog(id: string, input: {name: string; expected_revision: number}): Promise<pipelines.PipelineCatalog> {
+    const endpoint = `/api/pipelines/catalog/${encodeURIComponent(id)}`;
+    const result = parseWithFallback<pipelines.PipelineCatalog | null>(await this.fetch<unknown>(endpoint, {method: "PATCH", body: JSON.stringify(input)}), pipelines.PipelineCatalogSchema, null, {endpoint});
+    if (!result) throw new ApiError("Invalid pipeline rename response", 502, "Bad Gateway", {code: "malformed_response"});
+    return result;
+  }
+  async preflightPipelineExecution(input: {squad_id: string; execution?: ExecutionSelection}): Promise<IssueExecution | null> {
+    const endpoint = "/api/pipelines/preflight";
+    return parseWithFallback<IssueExecution | null>(await this.fetch<unknown>(endpoint, {method: "POST", body: JSON.stringify(input)}), IssueExecutionSchema, null, {endpoint});
+  }
+  async getIssueExecution(id: string): Promise<{execution: IssueExecution | null} | null> {
+    const endpoint = `/api/issues/${encodeURIComponent(id)}/execution`;
+    return parseWithFallback<{execution: IssueExecution | null} | null>(await this.fetch<unknown>(endpoint), z.object({execution: IssueExecutionSchema.nullable()}), null, {endpoint});
+  }
+  async startIssueExecution(id: string): Promise<{execution: IssueExecution; run: pipelines.PipelineRun}> {
+    const endpoint = `/api/issues/${encodeURIComponent(id)}/execution/start`;
+    const result = parseWithFallback<{execution: IssueExecution; run: pipelines.PipelineRun} | null>(await this.fetch<unknown>(endpoint, {method: "POST", body: "{}"}), z.object({execution: IssueExecutionSchema, run: pipelines.PipelineRunSchema}), null, {endpoint});
+    if (!result) throw new ApiError("Invalid execution start response", 502, "Bad Gateway", {code: "malformed_response"});
+    return result;
   }
   async validatePipeline(input: pipelines.PipelineSourceInput): Promise<pipelines.PipelineValidation> {
     const endpoint = "/api/pipelines/validate";

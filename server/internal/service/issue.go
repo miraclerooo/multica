@@ -22,6 +22,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	"github.com/multica-ai/multica/server/internal/issueworkflow"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
+	"github.com/multica-ai/multica/server/internal/pipeline"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/dbid"
@@ -62,22 +63,25 @@ func NewIssueService(q *db.Queries, tx TxStarter, bus *events.Bus, ac analytics.
 // to IssueService.Create. The handler owns the parsing step that turns its
 // request payload into this struct; the service stays transport-agnostic.
 type IssueCreateParams struct {
-	WorkspaceID   pgtype.UUID
-	Title         string
-	Description   pgtype.Text
-	Status        string
-	Priority      string
-	AssigneeType  pgtype.Text
-	AssigneeID    pgtype.UUID
-	CreatorType   string // "agent" or "member"
-	CreatorID     pgtype.UUID
-	ParentIssueID pgtype.UUID
-	ProjectID     pgtype.UUID
-	StartDate     pgtype.Date
-	DueDate       pgtype.Date
-	OriginType    pgtype.Text
-	OriginID      pgtype.UUID
-	AttachmentIDs []pgtype.UUID
+	Execution       *ExecutionSelection
+	ExecutionUserID string
+	IdempotencyKey  string
+	WorkspaceID     pgtype.UUID
+	Title           string
+	Description     pgtype.Text
+	Status          string
+	Priority        string
+	AssigneeType    pgtype.Text
+	AssigneeID      pgtype.UUID
+	CreatorType     string // "agent" or "member"
+	CreatorID       pgtype.UUID
+	ParentIssueID   pgtype.UUID
+	ProjectID       pgtype.UUID
+	StartDate       pgtype.Date
+	DueDate         pgtype.Date
+	OriginType      pgtype.Text
+	OriginID        pgtype.UUID
+	AttachmentIDs   []pgtype.UUID
 	// LabelIDs are the issue-scoped labels to attach to the new issue. They
 	// are validated and written inside the create transaction (see Create),
 	// so the issue is never committed with a partial or wrong label set. An
@@ -240,6 +244,57 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 	}
 	defer tx.Rollback(ctx)
 	qtx := s.Queries.WithTx(tx)
+	requestHash := ""
+	if p.IdempotencyKey != "" {
+		if len(p.IdempotencyKey) > 200 {
+			return IssueCreateResult{}, pipeline.Fail("idempotency_key_required", "idempotency key must be at most 200 bytes")
+		}
+		requestHash, err = issueCreateFingerprint(p)
+		if err != nil {
+			return IssueCreateResult{}, err
+		}
+		if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "issue-create:"+util.UUIDToString(p.WorkspaceID)+":"+util.UUIDToString(p.CreatorID)+":"+p.IdempotencyKey); err != nil {
+			return IssueCreateResult{}, err
+		}
+		old, e := qtx.GetIssueCreateRequest(ctx, db.GetIssueCreateRequestParams{WorkspaceID: p.WorkspaceID, CreatorID: p.CreatorID, IdempotencyKey: p.IdempotencyKey})
+		if e == nil {
+			if old.RequestHash != requestHash {
+				return IssueCreateResult{}, pipeline.Fail("idempotency_conflict", "key already used for another issue create request")
+			}
+			i, e := qtx.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: old.IssueID, WorkspaceID: p.WorkspaceID})
+			if e != nil {
+				return IssueCreateResult{}, e
+			}
+			labels, e := qtx.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{IssueID: i.ID, WorkspaceID: i.WorkspaceID})
+			if e != nil {
+				return IssueCreateResult{}, e
+			}
+			attachments, e := qtx.ListAttachmentsByIssue(ctx, db.ListAttachmentsByIssueParams{IssueID: i.ID, WorkspaceID: i.WorkspaceID})
+			if e != nil {
+				return IssueCreateResult{}, e
+			}
+			return IssueCreateResult{Issue: i, Labels: labels, Attachments: attachments}, nil
+		}
+		if !errors.Is(e, pgx.ErrNoRows) {
+			return IssueCreateResult{}, e
+		}
+	}
+	var execution *IssueExecution
+	if p.AssigneeType.String == "squad" && p.AssigneeID.Valid && s.TaskService != nil && s.TaskService.Pipelines != nil {
+		user := p.ExecutionUserID
+		if user == "" && p.CreatorType == "member" {
+			user = util.UUIDToString(p.CreatorID)
+		}
+		if user == "" {
+			user = util.UUIDToString(s.TaskService.OriginatorForIssueTask(ctx, db.Issue{WorkspaceID: p.WorkspaceID, CreatorType: p.CreatorType, CreatorID: p.CreatorID, OriginType: p.OriginType, OriginID: p.OriginID}, pgtype.UUID{}))
+		}
+		execution, err = s.TaskService.Pipelines.ResolveIssueExecution(ctx, qtx, util.UUIDToString(p.WorkspaceID), util.UUIDToString(p.AssigneeID), user, p.Execution, ExecutionPrincipal{ActorType: p.CreatorType, ActorID: util.UUIDToString(p.CreatorID)})
+		if err != nil {
+			return IssueCreateResult{}, err
+		}
+	} else if p.Execution != nil {
+		return IssueCreateResult{}, pipeline.Fail("invalid_execution_selection", "execution selection requires an assigned squad and pipeline service")
+	}
 
 	properties, err := validateIssueCreateProperties(ctx, tx, qtx, p.WorkspaceID, p.Properties)
 	if err != nil {
@@ -483,6 +538,18 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 			}
 		}
 	}
+	if execution != nil {
+		data, _ := json.Marshal(execution)
+		issue, err = qtx.SaveIssueExecution(ctx, db.SaveIssueExecutionParams{ID: issue.ID, WorkspaceID: issue.WorkspaceID, Execution: data})
+		if err != nil {
+			return IssueCreateResult{}, err
+		}
+	}
+	if p.IdempotencyKey != "" {
+		if err = qtx.SaveIssueCreateRequest(ctx, db.SaveIssueCreateRequestParams{WorkspaceID: p.WorkspaceID, CreatorID: p.CreatorID, IdempotencyKey: p.IdempotencyKey, RequestHash: requestHash, IssueID: issue.ID}); err != nil {
+			return IssueCreateResult{}, err
+		}
+	}
 
 	// Attach labels inside the create transaction so the issue and its
 	// labels commit together — the old flow created the issue first and
@@ -559,6 +626,11 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 		s.TaskService.RecordHumanDelegation(ctx, attribution.DirectHumanRun(p.CreatorID, attribution.EvidenceIssueAssignment, issue.ID))
 	}
 
+	if execution != nil {
+		if current, e := s.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: issue.ID, WorkspaceID: issue.WorkspaceID}); e == nil {
+			issue = current
+		}
+	}
 	return IssueCreateResult{Issue: issue, Attachments: attachments, Labels: labels, AssignedTaskID: assignedTaskID}, nil
 }
 
@@ -959,6 +1031,9 @@ func (s *IssueService) shouldEnqueueSquadLeaderOnAssign(ctx context.Context, iss
 }
 
 func (s *IssueService) isSquadLeaderReady(ctx context.Context, issue db.Issue) bool {
+	if e := ExecutionForIssue(issue); e != nil && e.State == "waiting_runtime" {
+		return false
+	}
 	if !issue.AssigneeType.Valid || issue.AssigneeType.String != "squad" || !issue.AssigneeID.Valid {
 		return false
 	}
@@ -969,10 +1044,11 @@ func (s *IssueService) isSquadLeaderReady(ctx context.Context, issue db.Issue) b
 	if err != nil {
 		return false
 	}
-	if squad.InstructionsMode == "pipeline" {
-		return !squad.ArchivedAt.Valid && squad.PipelineDefinitionID.Valid && s.TaskService != nil && s.TaskService.Pipelines != nil
+	mode := SquadExecutionMode(issue, squad)
+	if mode == "pipeline" {
+		return !squad.ArchivedAt.Valid && (squad.PipelineDefinitionID.Valid || ExecutionForIssue(issue) != nil) && s.TaskService != nil && s.TaskService.Pipelines != nil
 	}
-	if squad.InstructionsMode != "markdown" {
+	if mode != "markdown" {
 		return false
 	}
 
@@ -995,7 +1071,7 @@ func (s *IssueService) enqueueSquadLeaderTask(ctx context.Context, issue db.Issu
 	if err != nil {
 		return
 	}
-	if squad.InstructionsMode != "markdown" {
+	if SquadExecutionMode(issue, squad) != "markdown" {
 		actor := pgtype.UUID{}
 		if authorType == "member" {
 			actor = pipelineUUID(authorID)
