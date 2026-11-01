@@ -244,6 +244,10 @@ test("edits the actual GitLab document through nodes, dragged connections and se
     await check(
       page.getByRole("dialog", { name: "Review node deletion", exact: true }),
     ).toHaveCount(0);
+    await check(page.locator('[data-canvas-node="alpha"]')).toHaveCount(1);
+    await properties
+      .getByRole("textbox", { name: "Node ID", exact: true })
+      .fill("researcher");
     await properties
       .getByRole("textbox", { name: "Complete instructions", exact: true })
       .fill(newInstructions);
@@ -327,6 +331,13 @@ test("edits the actual GitLab document through nodes, dragged connections and se
     await page.getByRole("button", { name: "Redo", exact: true }).click();
     await check(page.locator("[data-canvas-node]")).toHaveCount(4);
     await page.getByRole("button", { name: "Undo", exact: true }).click();
+    properties = await f.selectNode("gate");
+    await properties
+      .getByRole("checkbox", { name: "Continue after failure", exact: true })
+      .check();
+    await properties
+      .getByRole("button", { name: "Apply changes", exact: true })
+      .click();
     const beforeLayout = await f.text();
     await f.graph();
     await page.getByRole("button", { name: "Fit view", exact: true }).click();
@@ -414,6 +425,9 @@ test("edits the actual GitLab document through nodes, dragged connections and se
     check(
       saved.plan.nodes.find((n: { id: string }) => n.id === "delta").needs,
     ).toEqual(["researcher"]);
+    check(
+      saved.plan.nodes.find((n: { id: string }) => n.id === "gate"),
+    ).toMatchObject({ type: "manual", allow_failure: true });
     const selection = await (
       await f.api.request(`/api/issues/${frozen.id}/execution`)
     ).json();
@@ -766,18 +780,22 @@ test("keeps invalid source, two drafts, historical versions and real 409 compari
     );
     await check(comparison).toContainText("A concurrent saved instruction.");
     const fitsComparison = async () => {
-      check(await comparison.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+      check(
+        await comparison.evaluate((el) => el.scrollWidth <= el.clientWidth),
+      ).toBe(true);
       const bounds = await comparison.boundingBox();
       for (const button of await comparison.getByRole("button").all()) {
         const box = await button.boundingBox();
         check(box).not.toBeNull();
         check(box!.x).toBeGreaterThanOrEqual(bounds!.x);
-        check(box!.x + box!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width);
+        check(box!.x + box!.width).toBeLessThanOrEqual(
+          bounds!.x + bounds!.width,
+        );
       }
     };
     await fitsComparison();
     await screenshot(page, info.outputPath("canvas-real-409.png"));
-    await page.setViewportSize({width:390,height:844});
+    await page.setViewportSize({ width: 390, height: 844 });
     await fitsComparison();
     await screenshot(page, info.outputPath("canvas-real-409-390.png"));
     await comparison
@@ -786,7 +804,7 @@ test("keeps invalid source, two drafts, historical versions and real 409 compari
     await check(
       page.getByRole("textbox", { name: "YAML", exact: true }),
     ).toHaveValue(concurrent.source);
-    await page.setViewportSize({width:1440,height:1000});
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await page
       .getByRole("button", { name: "Restore kept draft", exact: true })
       .click();

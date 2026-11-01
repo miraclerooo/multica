@@ -269,15 +269,30 @@ it("creates a manual GitLab job without executor configuration", () => {
   const result = apply(source, {
     type: "add_node",
     nodeType: "manual",
-    fields: { id: "another_gate", stage: "custom", owner: "human" },
+    fields: {
+      id: "another_gate",
+      stage: "custom",
+      owner: "human",
+      allowFailure: true,
+    },
   });
   expect(parse(result).another_gate).toMatchObject({
     stage: "custom",
     when: "manual",
     owner: "human",
+    allow_failure: true,
   });
   expect(parse(result).another_gate).not.toHaveProperty("tags");
   expect(parse(result).stages).toContain("custom");
+  expect(
+    parse(
+      apply(result, {
+        type: "update_node",
+        id: "another_gate",
+        fields: { allowFailure: false },
+      }),
+    ).another_gate.allow_failure,
+  ).toBe(false);
   expectCode(
     () =>
       apply(result, {

@@ -510,10 +510,13 @@ function writeFields(
   if (fields.role !== undefined && node.type === "agent")
     setRole(doc, kind, node.sourceId, fields.role);
   if (fields.owner !== undefined) doc.setIn([...path, "owner"], fields.owner);
+  if (
+    fields.allowFailure !== undefined &&
+    (kind === "gitlab_yaml" || node.type === "agent")
+  )
+    doc.setIn([...path, "allow_failure"], fields.allowFailure);
   if (node.type === "agent") {
     if (fields.retry !== undefined) doc.setIn([...path, "retry"], fields.retry);
-    if (fields.allowFailure !== undefined)
-      doc.setIn([...path, "allow_failure"], fields.allowFailure);
     if (fields.paths !== undefined)
       doc.setIn([...path, "artifacts", "paths"], doc.createNode(fields.paths));
     if (kind === "gitlab_yaml" && fields.when !== undefined) {

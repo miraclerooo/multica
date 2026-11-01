@@ -241,6 +241,36 @@ it("does not expose executor fields for a Hermes manual gate", () => {
   ).not.toBeInTheDocument();
   expect(properties.queryByRole("spinbutton")).not.toBeInTheDocument();
   expect(
+    properties.queryByRole("checkbox", { name: en.canvas.allow_failure }),
+  ).not.toBeInTheDocument();
+  expect(
     properties.queryByRole("textbox", { name: en.canvas.output }),
   ).not.toBeInTheDocument();
+});
+it("edits the supported GitLab manual failure policy without exposing executor configuration", () => {
+  const source =
+    "kind: gitlab_yaml\nstages: [review]\ngate: {stage: review, when: manual}\n";
+  render(
+    <DefinitionCanvas
+      source={source}
+      scope="w:s:g"
+      canEdit
+      roles={[]}
+      onChange={calls.change}
+      onShowYAML={() => {}}
+      onUndo={calls.undo}
+      onRedo={calls.redo}
+      canUndo={false}
+      canRedo={false}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "gate" }));
+  const properties = within(screen.getByTestId("canvas-properties"));
+  fireEvent.click(
+    properties.getByRole("checkbox", { name: en.canvas.allow_failure }),
+  );
+  fireEvent.submit(properties.getByTestId("canvas-node-form"));
+  expect(calls.change).toHaveBeenCalledOnce();
+  expect(calls.change.mock.calls[0]![0]).toContain("allow_failure: true");
+  expect(properties.queryByRole("spinbutton")).not.toBeInTheDocument();
 });

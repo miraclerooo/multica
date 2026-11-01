@@ -73,6 +73,8 @@ export function CanvasNodeForm({
     if (!manual || !hermes)
       assign("instructions", values.instructions, initial.instructions);
     assign("owner", values.owner, initial.owner);
+    if (manual && !hermes)
+      assign("allowFailure", values.allowFailure, initial.allowFailure);
     if (hermes && manual)
       assign("afterState", values.afterState, initial.afterState);
     if (!manual) {
@@ -175,6 +177,16 @@ export function CanvasNodeForm({
             onChange={(e) => update("owner", e.target.value)}
           />
         </label>
+        {manual && !hermes && (
+          <label className="flex items-center gap-2 text-caption">
+            <input
+              type="checkbox"
+              checked={values.allowFailure}
+              onChange={(e) => update("allowFailure", e.target.checked)}
+            />
+            {t(($) => $.canvas.allow_failure)}
+          </label>
+        )}
         {!manual && (
           <>
             <label className="grid gap-1 text-caption">
