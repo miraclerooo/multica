@@ -35,7 +35,7 @@ export function createEnDict(
       label: "TEAMMATES",
       title: "Assign to an agent like you\u2019d assign to a colleague",
       description:
-        "Agents aren\u2019t passive tools \u2014 they\u2019re active participants. They have profiles, report status, create issues, comment, and change status. Your activity feed shows humans and agents working side by side. People and agents also maintain shared project Specs & Docs, with Markdown editing and revision history. Configure squad pipelines in GitLab or Hermes YAML, review fixed materials at human gates, and collect deliverable links in task-grouped Markdown. Name multiple independent pipelines and choose guidance or an exact pipeline version for each issue; check the selected runtime before continuing.",
+        "Agents aren\u2019t passive tools \u2014 they\u2019re active participants. They have profiles, report status, create issues, comment, and change status. Your activity feed shows humans and agents working side by side. People and agents also maintain shared project Specs & Docs, with Markdown editing and revision history. Configure squad pipelines in GitLab or Hermes YAML, review fixed materials at human gates, and collect deliverable links in task-grouped Markdown. Name multiple independent pipelines and choose guidance or an exact pipeline version for each issue; check the selected runtime before continuing. Edit nodes and connections on a shared YAML canvas, with draft recovery and read-only historical runs.",
       cards: [
         {
           title: "Agents in the assignee picker",

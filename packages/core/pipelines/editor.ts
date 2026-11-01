@@ -8,6 +8,8 @@ const DraftSchema = z.object({
   operationKey: z.string(),
   name: z.string().optional(),
   catalogRevision: z.number().optional(),
+  past: z.array(z.string()).optional(),
+  future: z.array(z.string()).optional(),
 });
 export const usePipelineDraftStore = createDraftStore<{
   drafts: Record<string, z.infer<typeof DraftSchema>>;
@@ -28,23 +30,62 @@ export function putPipelineDraft(
   source: string,
   baseId = "",
   baseRevision?: number,
-  metadata?: {name?: string; catalogRevision?: number},
+  metadata?: {name?: string; catalogRevision?: number; previousSource?: string},
 ) {
   const state = usePipelineDraftStore.getState();
+  const previous = state.draft.drafts[key];
+  const before = previous?.source ?? metadata?.previousSource;
+  const changed = before !== undefined && before !== source;
   state.setDraft({
     drafts: {
       ...state.draft.drafts,
       [key]: {
         ...state.draft.drafts[key],
-        ...metadata,
+        ...(metadata?.name !== undefined ? {name: metadata.name} : {}),
         catalogRevision: state.draft.drafts[key]?.catalogRevision ?? metadata?.catalogRevision,
         source,
         baseId,
         baseRevision: state.draft.drafts[key]?.baseRevision ?? baseRevision,
         operationKey: crypto.randomUUID(),
+        past: changed ? boundedHistory([...(previous?.past ?? []), before]) : previous?.past,
+        future: changed ? [] : previous?.future,
       },
     },
   });
+}
+
+function boundedHistory(values: string[]) {
+  const result = values.slice(-20);
+  while (result.length > 1 && result.reduce((bytes, value) => bytes + value.length * 2, 0) > 1_048_576) result.shift();
+  return result;
+}
+
+export function stepPipelineHistory(key: string, direction: "undo" | "redo") {
+  const state = usePipelineDraftStore.getState();
+  const draft = state.draft.drafts[key];
+  if (!draft) return;
+  const history = direction === "undo" ? draft.past : draft.future;
+  const source = history?.at(-1);
+  if (source === undefined) return;
+  state.setDraft({drafts: {...state.draft.drafts, [key]: {
+    ...draft, source, operationKey: crypto.randomUUID(),
+    past: direction === "undo" ? history!.slice(0, -1) : boundedHistory([...(draft.past ?? []), draft.source]),
+    future: direction === "redo" ? history!.slice(0, -1) : boundedHistory([...(draft.future ?? []), draft.source]),
+  }}});
+}
+
+const CanvasLayoutSchema = z.object({
+  positions: z.record(z.string(), z.object({x:z.number().finite(), y:z.number().finite()})).default({}),
+  viewport: z.object({x:z.number().finite(),y:z.number().finite(),zoom:z.number().min(0.2).max(2)}).default({x:0,y:0,zoom:1}),
+});
+export type PipelineCanvasLayout = z.infer<typeof CanvasLayoutSchema>;
+export const usePipelineCanvasStore = createDraftStore<{layouts:Record<string,PipelineCanvasLayout>}>({
+  storageKey:"multica_pipeline_canvas_layout", workspaceScoped:false, emptyData:{layouts:{}},
+  hasMeaningful:data=>Object.keys(data.layouts).length>0,
+  migrateData:data=>{const parsed=z.object({layouts:z.record(z.string(),CanvasLayoutSchema)}).safeParse(data);return parsed.success?parsed.data:{layouts:{}};},
+});
+export function editPipelineCanvasLayout(key:string,layout:PipelineCanvasLayout) {
+  const state=usePipelineCanvasStore.getState();state.setDraft({layouts:{...state.draft.layouts,[key]:layout}});
 }
 export function clearPipelineDraft(key: string) {
   const state = usePipelineDraftStore.getState();
@@ -164,5 +205,9 @@ export function movePipelineDraftScope(from: string, to: string, legacy = false)
   if (workbench.draft.entries[from] && !workbench.draft.entries[to]) {
     const entries = {...workbench.draft.entries, [to]: workbench.draft.entries[from]!};
     delete entries[from];workbench.setDraft({entries});
+  }
+  const canvas=usePipelineCanvasStore.getState();
+  if(canvas.draft.layouts[from] && !canvas.draft.layouts[to]) {
+    const layouts={...canvas.draft.layouts,[to]:canvas.draft.layouts[from]!};delete layouts[from];canvas.setDraft({layouts});
   }
 }

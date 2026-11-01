@@ -25,6 +25,7 @@ const calls = vi.hoisted(() => ({
   active: false,
   messages: [] as { id: string; role: string; content: string }[],
   events: {} as Record<string, (payload: unknown) => void>,
+  compiler: "1",
 }));
 vi.mock("@multica/core/realtime", async () => {
   const { useEffect } = await import("react");
@@ -51,9 +52,9 @@ vi.mock("@multica/core/api", async (importOriginal) => ({
   api: {
     getPipelineCapabilities: async () => ({
       schema_version: 1,
-      compiler_version: "1",
+      compiler_version: calls.compiler,
       kinds: ["gitlab_yaml", "hermes_yaml"],
-      features: {},
+      features: {custom_nodes:true,manual_gates:true,gitlab_dag:true,hermes_forward_chain:true},
       limits: {},
     }),
     listPipelineDefinitions: async () => ({ items: [], limit: 50, offset: 0 }),
@@ -87,7 +88,7 @@ const squad: Squad = {
 };
 const source =
   "kind: gitlab_yaml\nstages: [custom]\ncollect:\n  stage: custom\n  instructions: Preserve my original instructions.\n";
-function mount(canManage: boolean) {
+function mount(canManage: boolean, busy = false) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
@@ -98,6 +99,7 @@ function mount(canManage: boolean) {
         squad={squad}
         members={[]}
         canManage={canManage}
+        externalBusy={busy}
         getName={(_type, id) => id}
         onDirtyChange={() => {}}
       />
@@ -112,7 +114,28 @@ afterEach(() => {
   calls.active = false;
   calls.messages = [];
   calls.events = {};
+  calls.compiler = "1";
   vi.clearAllMocks();
+});
+it.each(["compiler", "pending", "plan"])("blocks definition canvas and save handlers for %s uncertainty", async cause => {
+  calls.compiler=cause==="compiler"?"future":"1";
+  calls.validate.mockResolvedValue({kind:"gitlab_yaml",syntax_valid:true,binding_valid:true,diagnostics:[],plan:{kind:"gitlab_yaml",compiler_version:cause==="plan"?"future":"1",source_hash:"hash",stages:["custom"],nodes:[]}});
+  putPipelineDraft("ws:s:p",source,"",1);
+  const client=mount(true,cause==="pending");
+  await waitFor(()=>expect(calls.validate).toHaveBeenCalled());
+  const editor=screen.getByRole("textbox",{name:"YAML"});
+  if(cause!=="plan") {
+    expect(editor).toHaveAttribute("readonly");
+    fireEvent.change(editor,{target:{value:"forbidden replacement"}});
+    expect(editor).toHaveValue(source);
+  }
+  fireEvent.keyDown(editor,{key:"s",ctrlKey:true});
+  expect(screen.getByRole("button",{name:"Save version"})).toBeDisabled();
+  fireEvent.click(screen.getByRole("button",{name:"Flow graph"}));
+  await waitFor(()=>expect(screen.getByRole("button",{name:"Add execution node"})).toBeDisabled());
+  fireEvent.click(screen.getByRole("button",{name:"Add execution node"}));
+  expect(screen.queryByRole("dialog",{name:"Add execution node"})).not.toBeInTheDocument();
+  expect(calls.save).not.toHaveBeenCalled();client.clear();
 });
 it("allows a viewer to read the original draft while refusing edits and keyboard saves", async () => {
   calls.validate.mockResolvedValue({

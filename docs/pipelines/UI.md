@@ -1,6 +1,6 @@
 # Pipeline and task document interfaces (YANF-8)
 
-The v1.5 UI builds on the verified backend PR #8 at `96e39979ab57651082bb20191518df978b493a55`. It adds independently named squad pipelines, per-issue execution choices, and continuation of a saved issue after its selected environments become compatible. The previous v1.4 pipeline/Markdown implementation and R07/D01/R2-01 protections remain in place. Backend, migrations, CLI errors, compiler and scheduler are supplied by the stacked dependency; this UI does not add execution semantics.
+The v1.6 definition canvas builds on released main `9b8d8917824c01db67389436dfcea10f189a6d82`, tree `054c19bf51c0a1c5ff3ebdd9d027ac256f5217ef`. It adds node and connection editing to the existing shared Web/Desktop definition route. It reuses catalog, definition and validation APIs; backend, compiler, scheduler and CLI semantics are unchanged. The released v1.5 selection/continuation and v1.4 Markdown/R07/D01/R2-01 protections remain in place. Earlier delivery records below are explicitly historical.
 
 ## Entry points
 
@@ -10,6 +10,34 @@ The v1.5 UI builds on the verified backend PR #8 at `96e39979ab57651082bb2019151
 - Issue deliverable viewer / pipeline artifact catalog → Link to project document: select a same-project Markdown document or create one, append a source through the real association API, and retain form fields on conflict. Issue documents provide reverse navigation and relationship-only unlinking.
 - Project → Specs & Docs: task groups keyed by stable issue IDs, current task names, server-side search, unassociated Project materials, existing Markdown editing/history and source provenance. Fixed internal Markdown content links use authenticated transport on Web, Desktop and mobile; external URLs keep their ordinary link behavior.
 - Mobile → More → Pipelines: squad/catalog/version/default formSheet pickers and native text editing for YAML. New Issue has its own execution picker, preview and confirmed result/continuation. Issue views retain run history, vertical nodes, transcripts, fixed materials, approval and grouped Markdown. Interactive graph editing and Mika authoring remain on Web/Desktop.
+
+## v1.6 document and canvas editing
+
+`packages/core/pipelines/document.ts` projects the user's YAML document into editable nodes and provenance-tagged connections. Commands change a fresh YAML AST transactionally; they never regenerate a whole source from a compiled plan. Comments, full instructions, untouched configuration, paths, declarations and actual references survive edits. GitLab uses job IDs without inventing titles. Hermes uses state IDs and titles, plus actual `state.gate` references and `gates` declarations; generated gate IDs never become new states.
+
+The shared definition editor offers node creation/properties/deletion, selection, node dragging, background panning, zoom/fit, port connection/reconnection and equivalent endpoint forms. GitLab needs, stage inference and dependencies materials have distinct line types. Replacing inference requires confirmation and preserves other references. A needs/dependencies conflict keeps the original materials and requests a YAML policy choice. Hermes supports the existing forward chain; branches/joins/cycles stay unsupported. Deleting a node or gate previews affected references and never adds a bridge. Removing a Hermes gate also removes its outgoing state edge, leaving a repairable draft instead of bypassing the gate.
+
+Properties use complete instruction text, current agent roles/leader fallback, supported conditions, integer retries 0–10, exact artifact paths, owner roles and existing Hermes output/exit-check configuration. Manual gates omit executor/retry/output controls; GitLab manual jobs retain their supported allow_failure setting. The owner string is a human squad role, as validated by the existing binding service. YAML and canvas share the same scoped draft and undo/redo history, including keyboard undo in YAML. Current draft content and bounded history persist; layout/viewport preferences live separately under workspace/squad/logical-pipeline keys and never enter a save request.
+
+An invalid or unsafe source stays unchanged. The last safely mapped diagram is visibly read-only; forced form/port callbacks cannot write it over the new input. Unknown compiler/capabilities and in-flight saves also guard handlers. Validation is keyed to the submitted source, and Save requires the current response with understood compiler/kind and no binding failure. History previews and run diagrams remain read-only. Edit current definition opens the current draft; version conflicts preserve local source for comparison, explicit review or reload. Reload retains a recoverable local copy.
+
+All writes still use `POST /api/pipelines/catalog` or `/definitions` with the existing source, identity, CAS and idempotency contracts; `POST /validate` returns the actual executable plan/hash. Saving a version and enabling a squad default remain separate. No coordinates, node CRUD API, new runtime capability, CLI upgrade or daemon restart is required. Native mobile retains its existing viewing/approval/YAML and Web/Desktop canvas guidance; this is not a new native canvas.
+
+Canonical ownership: `document.test.ts` covers AST/semantic matrices, `editor.test.ts` covers shared history/layout isolation, `definition-canvas.test.tsx` covers actual form/callback protection, and `e2e/pipeline-canvas.spec.ts` covers authenticated browser/API compilation, pointer and keyboard actions, 390px, independent pipelines and real 409 recovery. New product screenshots are in `ui-evidence/v1.6/`; old screenshots and counts below are not evidence for these new interactions. Native/Electron visuals and real agent execution remain outside this local verification.
+
+### v1.6 local verification
+
+| Check | Observed result |
+| --- | --- |
+| Core pipeline canonical tests | 6 files, 100 passing cases, including AST edits, history/layout isolation and the existing R07/D01/R2 rules |
+| Shared views pipeline canonical tests | 4 files, 44 passing cases, including actual forms, GitLab manual failure policy and forced callback protection |
+| Authenticated Chromium product tests | 5 distinct scenarios passed: 3 canvas scenarios plus the existing source/activation and Hermes role regressions |
+| 390px evidence refresh | The Hermes browser scenario passed again after fitting the entire graph and capturing stable graph/property screenshots; this is the same scenario, not an additional acceptance item |
+| Types | Core, shared views, Web, Desktop main/preload and renderer passed |
+| Targeted lint | Core pipeline TS, shared pipeline TSX, new E2E using the repository base config and changed landing dictionaries passed |
+| Copy and docs | 5 landing dictionary cases passed; 6 canvas locale keysets match (73 nonempty strings each); docs MDX generation and whitespace checks passed |
+
+The browser fixtures use the managed local backend/PostgreSQL with fake executor identities and a real human squad role. They inspect actual save responses and server-compiled plans/hashes, original immutable definitions, a previously frozen task selection and an actual version-conflict response. The three new scenarios do not execute a paid agent. The 390px shots are responsive Web, not native device screenshots. The historical runtime recovery/cancellation, native/Electron/cross-client, Mika/real agent/GitHub, repocache EPERM versus later single-package 114, approval 5-second versus 15-second and A29 extension boundaries below remain unchanged. This is implementation evidence for review, not completion of all 65 acceptance items.
 
 ## v1.5 selection and continuation
 
@@ -25,7 +53,7 @@ Server data stays in Query. Draft source/name, reviewed catalog/squad revision, 
 
 The browser canonical flow is `e2e/pipeline-selection.spec.ts`. It uses authenticated local HTTP/PostgreSQL and fake executors/build reports. Mobile Node tests verify its independent transport and draft logic; iOS export verifies bundling. No simulator is installed, so these are not native rendering/press/keyboard or cross-client reconnect claims. Web/Desktop share the production route; Electron window visuals remain unverified. The historical full Go repocache EPERM and later 114-case single-package result, old approval 5-second timeout/15-second passing configuration, and real Mika/agent/GitHub execution limits remain applicable. This delivery does not certify all 55 acceptance items.
 
-## v1.5 verification
+## Historical v1.5 verification
 
 These checks cover the new UI delta on backend `96e39979ab57651082bb20191518df978b493a55`:
 

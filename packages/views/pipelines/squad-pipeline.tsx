@@ -10,11 +10,15 @@ import {
 } from "@multica/core/workspace/queries";
 import {
   bindPipelineRole,
+  canvasCapabilityRestriction,
+  stepPipelineHistory,
   adoptLegacyPipelineDraft,
   movePipelineDraftScope,
   clearPipelineDraft,
   extractPipelineDraft,
   pipelineCapabilitiesOptions,
+  pipelineCatalogItemOptions,
+  pipelineKeys,
   pipelineDefinitionOptions,
   pipelineDefinitionsOptions,
   pipelineSourceKind,
@@ -45,6 +49,7 @@ import {
 } from "@multica/ui/components/ui/dialog";
 import { useT } from "../i18n";
 import { ReadonlyContent } from "../editor";
+import { DefinitionCanvas } from "./definition-canvas";
 import { FlowGraph } from "./flow-graph";
 import { PipelineHistory } from "./run-details";
 import "./pipelines.css";
@@ -91,9 +96,12 @@ export function SquadPipeline({
   const draft = usePipelineDraftStore((s) => s.draft.drafts[key]);
   const source = draft?.source ?? current.data?.source ?? "";
   const kind = pipelineSourceKind(source);
+  const dirty = !!draft && (source !== (current.data?.source ?? "") || (!catalog && !!newName.trim()));
+  const latestId = catalog?.executable_definition_id || versions.data?.items[0]?.id;
+  const historical = !!catalog && !!openedId && !!latestId && openedId !== latestId && !draft;
+  const knownCompiler = caps.data?.schema_version === 1 && caps.data.compiler_version === "1";
   const [tab, setTab] = useState("definition");
   const [view, setView] = useState("yaml");
-  const [selected, setSelected] = useState("");
   const [switchKind, setSwitchKind] = useState("");
   const [showMika, setShowMika] = useState(false);
   const [comparison, setComparison] = useState(false);
@@ -107,7 +115,8 @@ export function SquadPipeline({
   const create = useCreatePipelineDefinition(wsId);
   const createCatalog = useCreatePipelineCatalog(wsId);
   const edit = (value: string) => {
-    putPipelineDraft(key, value, openedId, squad.revision, {catalogRevision: catalog?.revision});
+    if (!canManage || busy || historical || !knownCompiler) return;
+    putPipelineDraft(key, value, openedId, squad.revision, {catalogRevision: catalog?.revision, previousSource: source});
     setSaved("");
     setError("");
   };
@@ -128,20 +137,20 @@ export function SquadPipeline({
   const validationSource =
     validatedSource === source ? validation.data : undefined;
   const valid =
-    validationSource?.syntax_valid === true && !validation.isFetching;
+    validationSource?.syntax_valid === true && validationSource.binding_valid !== false && validationSource.plan?.compiler_version === "1" && validationSource.plan.kind === kind && !validation.isFetching;
   useEffect(() => {
-    onDirtyChange(!!draft);
+    onDirtyChange(dirty);
     return () => onDirtyChange(false);
-  }, [draft, onDirtyChange]);
+  }, [dirty, onDirtyChange]);
   useEffect(() => {
-    if (!draft) return;
+    if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [draft]);
+  }, [dirty]);
   const binding = useMutation({
     mutationFn: (data: {
       instructions_mode: "markdown" | "pipeline";
@@ -157,8 +166,11 @@ export function SquadPipeline({
   });
   const sourceReady = !catalog || !!draft || !!current.data;
   const busy = !sourceReady || externalBusy || create.isPending || createCatalog.isPending || binding.isPending;
+  const canEditSource = canManage && !busy && !historical && knownCompiler;
+  const canEditCanvas = canEditSource && !canvasCapabilityRestriction(caps.data, kind) && (!validationSource?.plan || validationSource.plan.compiler_version === "1");
+  const history = (direction: "undo" | "redo") => {if (canEditSource) stepPipelineHistory(key, direction);};
   const save = async (activate: boolean) => {
-    if (!canManage || !valid || busy || (!catalog && !newName.trim())) return;
+    if (!canEditSource || !valid || !caps.data?.kinds.includes(kind) || (activate && validationSource?.binding_valid !== true) || (!catalog && !newName.trim())) return;
     setError("");
     const body = {
       source,
@@ -198,7 +210,6 @@ export function SquadPipeline({
     }
   };
   const plan = validationSource?.plan;
-  const node = plan?.nodes.find((n) => n.id === selected);
   const preserveAndOpen = (id: string) => {
     if (draft) putPipelineDraft(`${key}:retained`, source, openedId);
     clearPipelineDraft(key);
@@ -233,6 +244,7 @@ export function SquadPipeline({
         <p className="pipeline-metadata">{t(($) => $.pipeline.readonly)}</p>
       )}
       {!sourceReady && <p role="status" className="text-caption">{current.isFetching || versions.isFetching ? t(($) => $.pipeline.loading) : t(($) => $.pipeline.failed)}</p>}
+      {historical && <div className="pipeline-toolbar"><p role="status" className="pipeline-metadata">{t($=>$.canvas.historical)}</p><Button type="button" size="sm" variant="outline" disabled={busy} onClick={()=>{if(!busy && latestId) preserveAndOpen(latestId);}}>{t($=>$.canvas.edit_current)}</Button></div>}
       {tab === "runs" ? (
         <PipelineHistory squadId={squad.id} />
       ) : (
@@ -244,8 +256,8 @@ export function SquadPipeline({
                 className="pipeline-select"
                 aria-label={t(($) => $.pipeline.dialect)}
                 value={source ? kind : ""}
-                disabled={!canManage || busy}
-                onChange={(e) => setSwitchKind(e.target.value)}
+                disabled={!canEditSource}
+                onChange={(e) => {if(canEditSource) setSwitchKind(e.target.value);}}
               >
                 {!source && (
                   <option value="">{t(($) => $.pipeline.new_empty)}</option>
@@ -282,6 +294,10 @@ export function SquadPipeline({
             >
               {t(($) => $.pipeline.copy)}
             </Button>
+            {view === "yaml" && <>
+              <Button type="button" size="sm" variant="ghost" disabled={!canEditSource || !draft?.past?.length} onClick={()=>history("undo")}>{t($=>$.canvas.undo)}</Button>
+              <Button type="button" size="sm" variant="ghost" disabled={!canEditSource || !draft?.future?.length} onClick={()=>history("redo")}>{t($=>$.canvas.redo)}</Button>
+            </>}
             {canManage && (
               <label className="pipeline-metadata cursor-pointer">
                 {t(($) => $.pipeline.import)}
@@ -289,7 +305,9 @@ export function SquadPipeline({
                   className="sr-only"
                   type="file"
                   accept=".yaml,.yml,text/yaml"
+                  disabled={!canEditSource}
                   onChange={async (e) => {
+                    if(!canEditSource) return;
                     const file = e.target.files?.[0];
                     if (file) {
                       if (draft)
@@ -302,7 +320,7 @@ export function SquadPipeline({
               </label>
             )}
             <span className="ml-auto pipeline-metadata" role="status">
-              {draft
+              {dirty
                 ? t(($) => $.pipeline.dirty)
                 : saved || (current.data ? `v${current.data.revision}` : "")}
             </span>
@@ -314,20 +332,27 @@ export function SquadPipeline({
               spellCheck={false}
               aria-label={t(($) => $.pipeline.yaml)}
               value={source}
-              readOnly={!canManage || busy}
+              readOnly={!canEditSource}
               onChange={(e) => edit(e.target.value)}
               onKeyDown={(e) => {
+                if((e.metaKey || e.ctrlKey) && (e.key.toLowerCase() === "z" || e.key.toLowerCase() === "y")) {
+                  e.preventDefault();history(e.shiftKey || e.key.toLowerCase() === "y" ? "redo" : "undo");
+                }
                 if ((e.metaKey || e.ctrlKey) && e.key === "s") {
                   e.preventDefault();
                   void save(false);
                 }
               }}
             />
-          ) : plan ? (
-            <FlowGraph plan={plan} selected={selected} onSelect={setSelected} />
-          ) : (
-            <p className="pipeline-metadata">{t(($) => $.pipeline.empty)}</p>
-          )}
+          ) : null}
+          <div hidden={view !== "graph"}>
+            <DefinitionCanvas source={source} fallbackSource={current.data?.source} scope={historical ? `${key}:history:${openedId}` : key}
+              canEdit={canEditCanvas} readOnlyReason={historical || !canManage || !sourceReady ? "" : busy?t($=>$.pipeline.loading):t($=>$.canvas.capability)}
+              emptyKinds={caps.data?.kinds.filter(value=>!canvasCapabilityRestriction(caps.data,value)) ?? []}
+              roles={[...new Set(members.filter(m=>m.member_type === "agent" && !!m.role).map(m=>m.role))].map(role=>({value:role,label:`${role} · ${members.filter(m=>m.role === role && m.member_type === "agent").map(m=>getName(m.member_type,m.member_id)).join(", ")}`}))}
+              onChange={edit} onShowYAML={()=>{setView("yaml");requestAnimationFrame(()=>input.current?.focus());}}
+              canUndo={!!draft?.past?.length} canRedo={!!draft?.future?.length} onUndo={()=>history("undo")} onRedo={()=>history("redo")}/>
+          </div>
           {!!source && caps.data && !caps.data.kinds.includes(kind) && (
             <p role="alert" className="pipeline-error">
               {t(($) => $.pipeline.unsupported)} ({kind})
@@ -373,8 +398,8 @@ export function SquadPipeline({
               >{`${d.line}:${d.column} · ${d.code} · ${d.message}${d.suggestion ? ` · ${d.suggestion}` : ""}`}</button>
             ))}
           </div>
-          {plan && (
-            <details className="pipeline-box" open={!!node}>
+          {plan && view === "yaml" && (
+            <details className="pipeline-box">
               <summary className="text-label font-medium cursor-pointer">
                 {t(($) => $.pipeline.bindings)}
               </summary>
@@ -394,7 +419,7 @@ export function SquadPipeline({
                       <select
                         className="pipeline-select"
                         value={n.role}
-                        disabled={!canManage || busy}
+                        disabled={!canEditSource}
                         onChange={(e) => {
                           try {
                             edit(bindPipelineRole(source, n, e.target.value));
@@ -426,20 +451,6 @@ export function SquadPipeline({
               </div>
             </details>
           )}
-          {node && (
-            <div className="pipeline-box">
-              <h3>{node.title || node.id}</h3>
-              <pre className="whitespace-pre-wrap break-words text-caption">
-                {node.instructions}
-              </pre>
-              <p className="pipeline-metadata mt-3">
-                {t(($) => $.pipeline.dependencies)}:{" "}
-                {[...new Set([...node.needs, ...node.artifact_sources])].join(
-                  ", ",
-                ) || "—"}
-              </p>
-            </div>
-          )}
           {canManage && (
             <div className="pipeline-toolbar">
               <Button
@@ -453,7 +464,7 @@ export function SquadPipeline({
               <Button
                 variant="outline"
                 size="sm"
-                disabled={!valid || busy || (!catalog && !newName.trim())}
+                disabled={!canEditSource || !valid || (!catalog && !newName.trim())}
                 onClick={() => void save(false)}
               >
                 {t(($) => $.pipeline.save)}
@@ -462,6 +473,7 @@ export function SquadPipeline({
                 size="sm"
                 disabled={
                   !valid ||
+                  !canEditSource ||
                   (!catalog && !newName.trim()) ||
                   validationSource?.binding_valid !== true ||
                   busy ||
@@ -522,12 +534,13 @@ export function SquadPipeline({
                         size="sm"
                         variant="outline"
                         disabled={busy}
-                        onClick={() =>
+                        onClick={() => {
+                          if (!canManage || !knownCompiler || busy) return;
                           binding.mutate({
                             instructions_mode: "pipeline",
                             pipeline_definition_id: version.id,
-                          })
-                        }
+                          });
+                        }}
                       >
                         {t(($) => $.pipeline.use_version)}
                       </Button>
@@ -599,6 +612,7 @@ export function SquadPipeline({
             </Button>
             <Button
               onClick={() => {
+                if(!canEditSource) return;
                 if (source)
                   putPipelineDraft(`${key}:${kind}`, source, openedId);
                 const old =
@@ -615,7 +629,7 @@ export function SquadPipeline({
         </DialogContent>
       </Dialog>
       <Dialog open={comparison} onOpenChange={setComparison}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>{t(($) => $.pipeline.latest)}</DialogTitle>
             <DialogDescription>
@@ -629,6 +643,15 @@ export function SquadPipeline({
             other={comparisonSource}
           />
           <DialogFooter>
+            {catalog && comparisonSource === undefined && <Button type="button" variant="outline" disabled={!canManage || busy} onClick={async()=>{
+              if(!canManage || busy) return;
+              try {
+                const latest=await qc.fetchQuery({...pipelineCatalogItemOptions(wsId,catalog.id),staleTime:0});
+                if(!latest?.executable_definition_id) throw new Error(t($=>$.pipeline.failed));
+                await qc.invalidateQueries({queryKey:pipelineKeys.all(wsId)});
+                preserveAndOpen(latest.executable_definition_id);setComparison(false);
+              } catch(error) {setError(error instanceof Error?error.message:String(error));}
+            }}>{t($=>$.canvas.reload)}</Button>}
             <Button
               onClick={async () => {
                 const latestSquad = await qc.fetchQuery({
@@ -694,15 +717,15 @@ function LatestSource({
     {...pipelineDefinitionsOptions(wsId, { squad_id: squadId, pipeline_id: pipelineId, limit: 1 }), enabled: !!pipelineId},
   );
   return (
-    <div className="grid sm:grid-cols-2 gap-3 overflow-auto max-h-[60vh] text-caption">
-      <pre className="whitespace-pre-wrap break-words">{local}</pre>
-      <pre className="whitespace-pre-wrap break-words">
+    <div className="grid min-w-0 sm:grid-cols-2 gap-3 overflow-auto max-h-[60vh] text-caption">
+      <section className="min-w-0 space-y-2"><h3 className="font-medium">{t($=>$.canvas.local_source)}</h3><pre className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{local}</pre></section>
+      <section className="min-w-0 space-y-2"><h3 className="font-medium">{t($=>$.pipeline.latest_source)}</h3><pre className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
         {other ??
           latest.data?.items[0]?.source ??
           (latest.isLoading
             ? t(($) => $.pipeline.loading)
             : t(($) => $.pipeline.empty))}
-      </pre>
+      </pre></section>
     </div>
   );
 }
