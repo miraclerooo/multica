@@ -478,6 +478,9 @@ LIMIT 1;
 WITH target AS (
     SELECT issue.id FROM issue WHERE issue.id = $1 AND issue.workspace_id = $2
 ),
+cleared_create_requests AS (
+ DELETE FROM issue_create_request WHERE issue_id IN (SELECT target.id FROM target) AND workspace_id=$2
+),
 cleared_document_issues AS (
  DELETE FROM project_document_issue WHERE issue_id IN (SELECT target.id FROM target) AND workspace_id=$2
 ),

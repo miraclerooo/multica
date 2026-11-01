@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/multica-ai/multica/server/internal/cli"
+	"github.com/multica-ai/multica/server/internal/pipeline"
 	"github.com/multica-ai/multica/server/internal/util"
 )
 
@@ -266,8 +267,9 @@ var issueChildrenCmd = &cobra.Command{
 }
 
 var issueCreateCmd = &cobra.Command{
-	Use:   "create",
-	Short: "Create a new issue",
+	Annotations: map[string]string{jsonErrorCodeAnnotation: "command_failed"},
+	Use:         "create",
+	Short:       "Create a new issue",
 	Long: `Create a new issue. Use --property "Name=Value" to set a custom property
 atomically with creation (repeatable, one distinct property per flag).
 For multi_text / multi_url, use a JSON array of strings when entries contain
@@ -674,6 +676,10 @@ func init() {
 	issueCreateCmd.Flags().String("due-date", "", "Due date (calendar day, YYYY-MM-DD)")
 	issueCreateCmd.Flags().Bool("allow-duplicate", false, "Allow creating an issue even when an active duplicate exists")
 	issueCreateCmd.Flags().String("output", "json", "Output format: table or json")
+	issueCreateCmd.Flags().String("execution", "default", "Squad execution: default, markdown or pipeline")
+	issueCreateCmd.Flags().String("pipeline", "", "Logical pipeline ID for --execution pipeline")
+	issueCreateCmd.Flags().String("definition", "", "Exact version ID within the selected pipeline")
+	issueCreateCmd.Flags().String("idempotency-key", "", "Replay the same issue create without another dispatch")
 	issueCreateCmd.Flags().StringSlice("attachment", nil, "File path(s) to attach (can be specified multiple times). Each file is uploaded and its markdown reference is appended to the description, which is what makes it render on the issue page")
 	issueCreateCmd.Flags().StringSlice("attachment-id", nil, "Existing attachment UUID(s) to bind to the created issue (can be specified multiple times)")
 	issueCreateCmd.Flags().StringArray("property", nil, `Set a custom property atomically with creation as "Name=Value" (repeatable, one distinct property per flag). Multi-value properties use comma-separated values; multi_text/multi_url also accept JSON arrays (required for commas in entries or values starting with "["). Property and option/member names are case-insensitive; UUIDs are accepted. Filter-only __none__, >=, <=, and != forms are rejected.`)
@@ -1497,6 +1503,22 @@ func runIssueCreate(cmd *cobra.Command, _ []string) error {
 	defer cancel()
 
 	body := map[string]any{"title": title}
+	if cmd.Flags().Changed("execution") || cmd.Flags().Changed("pipeline") || cmd.Flags().Changed("definition") {
+		selection, e := pipelineExecutionFlags(cmd)
+		if e != nil {
+			return e
+		}
+		if e = requirePipelineSelectionAPI(ctx, client); e != nil {
+			return e
+		}
+		body["execution"] = selection
+	}
+	if key := pipelineFlag(cmd, "idempotency-key"); key != "" {
+		if err := requirePipelineSelectionAPI(ctx, client); err != nil {
+			return err
+		}
+		body["idempotency_key"] = key
+	}
 	propertyFlags, _ := cmd.Flags().GetStringArray("property")
 	var createProperties map[string]json.RawMessage
 	if len(propertyFlags) > 0 {
@@ -1616,7 +1638,9 @@ func runIssueCreate(cmd *cobra.Command, _ []string) error {
 		}
 		uploaded = append(uploaded, result)
 		attachmentIDs = appendUniqueStrings(attachmentIDs, result.ID)
-		fmt.Fprintf(os.Stderr, "Uploaded %s\n", att.path)
+		if output, _ := cmd.Flags().GetString("output"); output != "json" {
+			fmt.Fprintf(os.Stderr, "Uploaded %s\n", att.path)
+		}
 	}
 	desc = appendAttachmentReferences(desc, uploaded)
 	if hasDesc || len(uploaded) > 0 {
@@ -1629,12 +1653,29 @@ func runIssueCreate(cmd *cobra.Command, _ []string) error {
 	var result map[string]any
 	if err := client.PostJSON(ctx, "/api/issues", body, &result); err != nil {
 		if msg, ok := activeDuplicateIssueCreateMessage(err); ok {
+			if _, jsonMode := commandJSONErrorCode(cmd, nil); jsonMode {
+				return err
+			}
 			return errors.New(msg)
 		}
 		return fmt.Errorf("create issue: %w", err)
 	}
+	if selection, ok := body["execution"].(map[string]string); ok {
+		ack, valid := result["execution"].(map[string]any)
+		if !valid || ack["requested_mode"] != selection["mode"] || (selection["mode"] == "pipeline" && (ack["pipeline_id"] != selection["pipeline_id"] || (selection["definition_id"] != "" && ack["definition_id"] != selection["definition_id"]))) {
+			key := strVal(result, "identifier")
+			if key == "" {
+				key = strVal(result, "id")
+			}
+			return pipeline.Fail("execution_snapshot_missing", fmt.Sprintf("issue %s was created without confirming the requested execution; inspect it before retrying", key))
+		}
+	}
 	if err := verifyIssueCreateProperties(createProperties, result); err != nil {
-		return fmt.Errorf("issue %s was created, but the server did not confirm its custom properties; review it before retrying: %w", issueDisplayKey(result), err)
+		key := strVal(result, "identifier")
+		if key == "" {
+			key = strVal(result, "id")
+		}
+		return fmt.Errorf("issue %s was created, but the server did not confirm its custom properties; review it before retrying: %w", key, err)
 	}
 
 	output, _ := cmd.Flags().GetString("output")

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/cli"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 // TestMain isolates the application home and cwd. Keep the compiler's original
@@ -59,14 +60,17 @@ func TestPipelineJSONErrorProcess(t *testing.T) {
 	largeConflict := fmt.Sprintf(`{"code":"document_version_conflict","error":"Document changed","latest":{"body":%q,"version":6}}`, strings.Repeat("x", 8192))
 
 	cases := []struct {
-		name   string
-		args   []string
-		status int
-		body   string
-		exit   int
-		code   string
-		text   bool
-		stdout string
+		name    string
+		args    []string
+		status  int
+		body    string
+		exit    int
+		code    string
+		text    bool
+		stdout  string
+		path    string
+		method  string
+		request string
 	}{
 		{name: "association_conflict", args: associate("json"), status: 409, body: documentConflict, exit: 1, code: "document_version_conflict"},
 		{name: "association_default_json", args: associate(""), status: 409, body: documentConflict, exit: 1, code: "document_version_conflict"},
@@ -108,6 +112,28 @@ func TestPipelineJSONErrorProcess(t *testing.T) {
 		{name: "references_success", args: []string{"project", "document", "references", "PROJ-7"}, status: 200, body: `{"documents":[],"references":[],"total":0}`, stdout: "json"},
 		{name: "unlink_success", args: []string{"project", "document", "unlink", "PROJ-7", id}, status: 204, stdout: "json"},
 		{name: "squad_success", args: append(append([]string{}, squad...), "--output=json"), status: 200, body: `{"id":"squad","instructions_mode":"pipeline","revision":2}`, stdout: "json"},
+		{name: "catalog_create", args: []string{"pipeline", "catalog", "create", "-", "--squad", id, "--name", "Named pipeline", "--idempotency-key", "one"}, status: 201, body: `{"pipeline":{"id":"p"},"definition":{"id":"d"}}`, stdout: "json", path: "/api/pipelines/catalog", method: "POST"},
+		{name: "catalog_list", args: []string{"pipeline", "catalog", "list", "--squad", id}, status: 200, body: `{"items":[],"limit":50,"offset":0}`, stdout: "json", path: "/api/pipelines/catalog", method: "GET"},
+		{name: "catalog_rename_conflict", args: []string{"pipeline", "catalog", "rename", id, "--name", "New name", "--expected-revision", "2"}, status: 409, body: documentConflict, exit: 1, code: "document_version_conflict", path: "/api/pipelines/catalog/" + id, method: "PATCH", request: `{"name":"New name","expected_revision":2}`},
+		{name: "catalog_get_forbidden", args: []string{"pipeline", "catalog", "get", id}, status: 403, body: `{"code":"invocation_forbidden","error":"Denied"}`, exit: 1, code: "invocation_forbidden", path: "/api/pipelines/catalog/" + id, method: "GET"},
+		{name: "catalog_missing_required", args: []string{"pipeline", "catalog", "create", "-", "--output=json"}, exit: 1, code: "pipeline_command_failed"},
+		{name: "catalog_bad_position", args: []string{"pipeline", "catalog", "rename", "--name", "n", "--expected-revision", "1"}, exit: 1, code: "pipeline_command_failed"},
+		{name: "catalog_append_version", args: []string{"pipeline", "create", "-", "--squad", id, "--pipeline", project, "--idempotency-key", "two", "--expected-pipeline-revision", "2"}, status: 409, body: approvalConflict, exit: 1, code: "revision_conflict", path: "/api/pipelines/definitions", method: "POST"},
+		{name: "catalog_filter_versions", args: []string{"pipeline", "list", "--squad", id, "--pipeline", project}, status: 200, body: `{"items":[]}`, stdout: "json", path: "/api/pipelines/definitions", method: "GET"},
+		{name: "preflight_unknown_is_business_result", args: []string{"pipeline", "preflight", "--squad", id, "--execution", "pipeline", "--pipeline", project}, status: 200, body: `{"state":"waiting_runtime","readiness":{"ready":false,"runtimes":[{"status":"unknown"}]}}`, stdout: "json", path: "/api/pipelines/preflight", method: "POST", request: `{"squad_id":"33333333-3333-4333-8333-333333333333","execution":{"mode":"pipeline","pipeline_id":"11111111-1111-4111-8111-111111111111"}}`},
+		{name: "preflight_invalid_selection", args: []string{"pipeline", "preflight", "--squad", id, "--execution", "markdown", "--pipeline", project}, exit: 1, code: "invalid_execution_selection"},
+		{name: "execution_waiting", args: []string{"pipeline", "execution", "start", "PROJ-7"}, status: 409, body: `{"code":"runtime_not_ready","error":"Waiting","execution":{"definition_id":"frozen","readiness":{"ready":false}}}`, exit: 1, code: "runtime_not_ready", path: "/api/issues/PROJ-7/execution/start", method: "POST"},
+		{name: "execution_query", args: []string{"pipeline", "execution", "get", "PROJ-7"}, status: 200, body: `{"execution":{"state":"waiting_runtime"}}`, stdout: "json", path: "/api/issues/PROJ-7/execution", method: "GET"},
+		{name: "new_default_owned_error", args: []string{"squad", "update", id, "--pipeline", project, "--expected-revision", "2"}, status: 404, body: definitionError, exit: 4, code: "definition_not_owned", path: "/api/squads/" + id, method: "PUT", request: `{"pipeline_id":"11111111-1111-4111-8111-111111111111","expected_revision":2}`},
+		{name: "issue_create_missing_title", args: []string{"issue", "create", "--output=json"}, exit: 1, code: "command_failed"},
+		{name: "issue_create_bad_selection", args: []string{"issue", "create", "--title", "One", "--execution", "pipeline"}, exit: 1, code: "invalid_execution_selection"},
+		{name: "issue_create_bad_flag", args: []string{"issue", "create", "--not-a-flag", "--output=json"}, exit: 1, code: "command_failed"},
+		{name: "issue_create_pipeline_owned_error", args: []string{"issue", "create", "--title", "One", "--assignee-id", id, "--execution", "pipeline", "--pipeline", project, "--idempotency-key", "issue-one"}, status: 404, body: definitionError, exit: 4, code: "definition_not_owned", path: "/api/issues", method: "POST", request: `{"title":"One","assignee_type":"squad","assignee_id":"33333333-3333-4333-8333-333333333333","execution":{"mode":"pipeline","pipeline_id":"11111111-1111-4111-8111-111111111111"},"idempotency_key":"issue-one"}`},
+		{name: "issue_create_duplicate_keeps_code", args: []string{"issue", "create", "--title", "One"}, status: 409, body: `{"code":"active_duplicate_issue","error":"Duplicate","issue":{"id":"old","identifier":"PROJ-7","title":"One"}}`, exit: 1, code: "active_duplicate_issue", path: "/api/issues", method: "POST"},
+		{name: "issue_create_pipeline_success", args: []string{"issue", "create", "--title", "One", "--assignee-id", id, "--execution", "pipeline", "--pipeline", project}, status: 201, body: `{"id":"issue-one","execution":{"requested_mode":"pipeline","pipeline_id":"11111111-1111-4111-8111-111111111111","definition_id":"fixed","state":"waiting_runtime"}}`, stdout: "json", path: "/api/issues", method: "POST"},
+		{name: "issue_create_requires_snapshot_ack", args: []string{"issue", "create", "--title", "One", "--assignee-id", id, "--execution", "markdown"}, status: 201, body: `{"id":"issue-one"}`, exit: 1, code: "execution_snapshot_missing", path: "/api/issues", method: "POST"},
+		{name: "issue_create_old_server_refused", args: []string{"issue", "create", "--title", "One", "--execution", "markdown"}, status: 200, body: `{}`, exit: 1, code: "unsupported_capability"},
+		{name: "version_reports_build_capabilities", args: []string{"version", "--output=json"}, stdout: "json"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -118,6 +144,23 @@ func TestPipelineJSONErrorProcess(t *testing.T) {
 					t.Error("CLI did not use fake process credential")
 				}
 				w.Header().Set("Content-Type", "application/json")
+				if len(tc.args) > 1 && tc.args[0] == "issue" && tc.args[1] == "create" && tc.status != 0 {
+					switch r.URL.Path {
+					case "/api/pipelines/capabilities":
+						if tc.name == "issue_create_old_server_refused" {
+							fmt.Fprint(w, `{"features":{}}`)
+						} else {
+							fmt.Fprint(w, `{"features":{"task_execution_selection":true}}`)
+						}
+						return
+					case "/api/squads":
+						fmt.Fprintf(w, `[{"id":%q,"name":"Fake squad"}]`, id)
+						return
+					case "/api/agents", "/api/workspaces/" + project + "/members":
+						fmt.Fprint(w, `[]`)
+						return
+					}
+				}
 				if r.URL.Path == "/api/projects/"+project {
 					_, _ = fmt.Fprintf(w, `{"id":%q,"title":"Test project"}`, project)
 					return
@@ -126,6 +169,21 @@ func TestPipelineJSONErrorProcess(t *testing.T) {
 					t.Errorf("local failure made HTTP request: %s %s", r.Method, r.URL)
 					w.WriteHeader(500)
 					return
+				}
+				if tc.path != "" && (r.URL.Path != tc.path || r.Method != tc.method) {
+					t.Errorf("wrong request %s %s", r.Method, r.URL)
+				}
+				if tc.request != "" {
+					var got, want any
+					if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+						t.Error(err)
+					}
+					_ = json.Unmarshal([]byte(tc.request), &want)
+					a, _ := json.Marshal(got)
+					b, _ := json.Marshal(want)
+					if !bytes.Equal(a, b) {
+						t.Errorf("request %s want %s", a, b)
+					}
 				}
 				w.WriteHeader(tc.status)
 				if tc.status != 204 {
@@ -184,6 +242,15 @@ func TestPipelineJSONErrorProcess(t *testing.T) {
 				if tc.name == "failed_run_query_control" && !strings.Contains(stdout.String(), `"status": "failed"`) {
 					t.Fatal("failed run state changed")
 				}
+				if tc.name == "version_reports_build_capabilities" {
+					var build protocol.BuildInfo
+					if err := json.Unmarshal(stdout.Bytes(), &build); err != nil {
+						t.Fatal(err)
+					}
+					if build.Version == "" || !build.Supports(protocol.CapabilityPipelineSelectionV1) || build.ReleaseChannel == "" {
+						t.Fatalf("incomplete actual CLI report %+v", build)
+					}
+				}
 				return
 			}
 			var payload map[string]json.RawMessage
@@ -194,7 +261,7 @@ func TestPipelineJSONErrorProcess(t *testing.T) {
 				t.Fatalf("missing stable error fields: %.200s", stderr.String())
 			}
 			var original map[string]json.RawMessage
-			if json.Unmarshal([]byte(tc.body), &original) == nil {
+			if tc.status >= 400 && json.Unmarshal([]byte(tc.body), &original) == nil {
 				for key, want := range original {
 					var gotJSON, wantJSON bytes.Buffer
 					_ = json.Compact(&gotJSON, payload[key])

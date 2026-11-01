@@ -1,6 +1,6 @@
 -- name: CreatePipelineDefinition :one
-INSERT INTO pipeline_definition (id,workspace_id,squad_id,revision,kind,source,source_hash,compiler_version,plan,creator_id,idempotency_key)
-VALUES ($1,$2,$3,(SELECT COALESCE(MAX(d.revision),0)+1 FROM pipeline_definition d WHERE d.workspace_id=$2 AND d.squad_id=$3),$4,$5,$6,$7,$8,$9,$10) RETURNING *;
+INSERT INTO pipeline_definition (id,workspace_id,squad_id,revision,kind,source,source_hash,compiler_version,plan,creator_id,idempotency_key,pipeline_id)
+VALUES ($1,$2,$3,(SELECT COALESCE(MAX(d.revision),0)+1 FROM pipeline_definition d WHERE d.workspace_id=$2 AND d.pipeline_id=$11),$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *;
 
 -- name: GetPipelineDefinition :one
 SELECT * FROM pipeline_definition WHERE id=$1 AND workspace_id=$2;
@@ -9,7 +9,7 @@ SELECT * FROM pipeline_definition WHERE id=$1 AND workspace_id=$2;
 SELECT * FROM pipeline_definition WHERE workspace_id=$1 AND squad_id=$2 AND idempotency_key=$3;
 
 -- name: ListPipelineDefinitions :many
-SELECT * FROM pipeline_definition WHERE workspace_id=$1 AND squad_id=$2 ORDER BY revision DESC LIMIT $3 OFFSET $4;
+SELECT * FROM pipeline_definition WHERE workspace_id=$1 AND squad_id=$2 ORDER BY revision DESC,id DESC LIMIT $3 OFFSET $4;
 
 -- name: SetSquadPipeline :one
 UPDATE squad SET instructions_mode=$3,pipeline_definition_id=$4,revision=revision+1,updated_at=now()

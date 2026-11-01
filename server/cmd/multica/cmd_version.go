@@ -23,13 +23,18 @@ func runVersion(cmd *cobra.Command, _ []string) error {
 	output, _ := cmd.Flags().GetString("output")
 
 	if output == "json" {
-		info := map[string]string{
-			"version": version,
-			"commit":  commit,
-			"date":    date,
-			"go":      runtime.Version(),
-			"os":      runtime.GOOS,
-			"arch":    runtime.GOARCH,
+		build := currentBuildInfo()
+		info := map[string]any{
+			"version":           version,
+			"commit":            commit,
+			"build_commit":      build.Commit,
+			"date":              date,
+			"go":                runtime.Version(),
+			"os":                runtime.GOOS,
+			"arch":              runtime.GOARCH,
+			"capabilities":      build.Capabilities,
+			"release_channel":   build.ReleaseChannel,
+			"upgrade_guide_url": build.UpgradeGuideURL,
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")

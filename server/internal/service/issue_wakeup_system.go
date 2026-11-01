@@ -338,7 +338,7 @@ func resolveWakeTarget(ctx context.Context, q *db.Queries, issue db.Issue) (wake
 		if err != nil {
 			return target, err
 		}
-		if squad.InstructionsMode != "markdown" {
+		if SquadExecutionMode(issue, squad) != "markdown" {
 			return wakeTarget{Type: "none"}, nil
 		}
 		if _, e := q.GetActivePipelineRun(ctx, db.GetActivePipelineRunParams{WorkspaceID: issue.WorkspaceID, IssueID: issue.ID}); e == nil {

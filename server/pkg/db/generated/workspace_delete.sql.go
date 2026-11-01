@@ -267,6 +267,12 @@ func (q *Queries) DeleteWorkspaceIssueRoots(ctx context.Context, workspaceID pgt
 
 const deleteWorkspaceLeafData = `-- name: DeleteWorkspaceLeafData :exec
 WITH
+deleted_pipeline_catalog AS (
+    DELETE FROM squad_pipeline WHERE workspace_id=$1
+),
+deleted_issue_create_requests AS (
+    DELETE FROM issue_create_request WHERE workspace_id=$1
+),
 deleted_pipeline_runs AS (
     DELETE FROM pipeline_run WHERE workspace_id=$1
 ),

@@ -180,11 +180,14 @@ func runSquadUpdate(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	body := map[string]any{}
-	for _, f := range []string{"instructions-mode", "pipeline-definition"} {
+	for _, f := range []string{"instructions-mode", "pipeline-definition", "pipeline"} {
 		if cmd.Flags().Changed(f) {
 			field := "instructions_mode"
 			if f == "pipeline-definition" {
 				field = "pipeline_definition_id"
+			}
+			if f == "pipeline" {
+				field = "pipeline_id"
 			}
 			v, _ := cmd.Flags().GetString(f)
 			body[field] = v
@@ -538,6 +541,7 @@ func init() {
 	squadUpdateCmd.Flags().String("instructions", "", "New instructions")
 	squadUpdateCmd.Flags().String("instructions-mode", "", "markdown or pipeline; requires --expected-revision")
 	squadUpdateCmd.Flags().String("pipeline-definition", "", "Definition owned by this squad")
+	squadUpdateCmd.Flags().String("pipeline", "", "Default logical pipeline owned by this squad")
 	squadUpdateCmd.Flags().Int64("expected-revision", 0, "Squad revision read from squad get")
 	squadUpdateCmd.Flags().String("leader", "", "New leader agent (name or ID)")
 	squadUpdateCmd.Flags().String("avatar-url", "", "New avatar URL")

@@ -1,4 +1,5 @@
 import type { Label } from "./label";
+import type { IssueExecution } from "../pipelines/execution";
 import type { IssuePropertyValues } from "./property";
 
 /** Four lifecycle classifications. User-facing columns group by status key. */
@@ -168,6 +169,7 @@ export interface IssueDuplicateOf {
 }
 
 export interface Issue {
+  execution?: IssueExecution | null;
   id: string;
   workspace_id: string;
   number: number;

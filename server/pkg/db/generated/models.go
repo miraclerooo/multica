@@ -867,6 +867,7 @@ type Issue struct {
 	LastActivityAt     pgtype.Timestamptz `json:"last_activity_at"`
 	TriageState        pgtype.Text        `json:"triage_state"`
 	DuplicateOfIssueID pgtype.UUID        `json:"duplicate_of_issue_id"`
+	Execution          []byte             `json:"execution"`
 }
 
 type IssueChildEvent struct {
@@ -879,6 +880,14 @@ type IssueChildEvent struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	ClaimedAt    pgtype.Timestamptz `json:"claimed_at"`
 	ProcessedAt  pgtype.Timestamptz `json:"processed_at"`
+}
+
+type IssueCreateRequest struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	CreatorID      pgtype.UUID `json:"creator_id"`
+	IdempotencyKey string      `json:"idempotency_key"`
+	RequestHash    string      `json:"request_hash"`
+	IssueID        pgtype.UUID `json:"issue_id"`
 }
 
 type IssueDependency struct {
@@ -1270,6 +1279,7 @@ type PipelineDefinition struct {
 	CreatorID       pgtype.UUID        `json:"creator_id"`
 	IdempotencyKey  string             `json:"idempotency_key"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	PipelineID      pgtype.UUID        `json:"pipeline_id"`
 }
 
 type PipelineRun struct {
@@ -1599,6 +1609,21 @@ type SquadMember struct {
 	MemberID   pgtype.UUID        `json:"member_id"`
 	Role       string             `json:"role"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type SquadPipeline struct {
+	ID                     pgtype.UUID        `json:"id"`
+	WorkspaceID            pgtype.UUID        `json:"workspace_id"`
+	SquadID                pgtype.UUID        `json:"squad_id"`
+	Name                   string             `json:"name"`
+	Revision               int64              `json:"revision"`
+	ExecutableDefinitionID pgtype.UUID        `json:"executable_definition_id"`
+	Legacy                 bool               `json:"legacy"`
+	CreatorID              pgtype.UUID        `json:"creator_id"`
+	IdempotencyKey         string             `json:"idempotency_key"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	CreationHash           string             `json:"creation_hash"`
 }
 
 type SysCronExecution struct {

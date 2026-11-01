@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS squad_pipeline_id;

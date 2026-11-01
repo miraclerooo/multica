@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { IssueExecutionSchema } from "../pipelines/execution";
 import { normalizeIssueStatusCategory } from "../issues/config/status";
 import type {
   WorkflowHandoffPreview,
@@ -1425,6 +1426,7 @@ export const CommentSubIssueTaskResponseSchema = z.object({
 }).loose();
 
 export const IssueSchema = z.object({
+  execution: IssueExecutionSchema.nullable().optional().catch(null),
   id: z.string(),
   workspace_id: z.string(),
   number: z.number(),

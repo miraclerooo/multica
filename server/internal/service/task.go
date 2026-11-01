@@ -5901,7 +5901,7 @@ func (s *TaskService) RerunIssue(ctx context.Context, issueID pgtype.UUID, sourc
 			return nil, ErrPipelineManagedTask
 		}
 		if issue.AssigneeType.String == "squad" {
-			if squad, e := s.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{ID: issue.AssigneeID, WorkspaceID: issue.WorkspaceID}); e == nil && squad.InstructionsMode != "markdown" {
+			if squad, e := s.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{ID: issue.AssigneeID, WorkspaceID: issue.WorkspaceID}); e == nil && SquadExecutionMode(issue, squad) != "markdown" {
 				return nil, ErrPipelineManagedTask
 			}
 		}
@@ -7994,6 +7994,7 @@ func IssueToMap(issue db.Issue, issuePrefix string) map[string]any {
 		"revision":         issue.Revision,
 		"metadata":         util.JSONObjectOrEmpty(issue.Metadata),
 		"properties":       util.JSONObjectOrEmpty(issue.Properties),
+		"execution":        ExecutionForIssue(issue),
 	}
 }
 

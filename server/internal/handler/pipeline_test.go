@@ -66,6 +66,7 @@ func newPipelineFixture(t *testing.T, source string) *pipelineFixture {
 	h.AutopilotService = service.NewAutopilotService(h.Queries, h.TxStarter, h.Bus, h.TaskService)
 	h.initPipelines(nil)
 	f := &pipelineFixture{h: &h, squad: squad, agent: agent, issue: issue}
+	dbfx.Cleanup(t, "DELETE FROM squad_pipeline WHERE squad_id=$1", squad)
 	dbfx.Cleanup(t, "DELETE FROM pipeline_definition WHERE squad_id=$1", squad)
 	dbfx.Cleanup(t, "DELETE FROM pipeline_run WHERE issue_id=$1", issue)
 	dbfx.Cleanup(t, "DELETE FROM agent_task_queue WHERE issue_id=$1", issue)

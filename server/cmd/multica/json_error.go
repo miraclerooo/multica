@@ -6,12 +6,13 @@ import (
 	"strings"
 
 	"github.com/multica-ai/multica/server/internal/cli"
+	"github.com/multica-ai/multica/server/internal/pipeline"
 	"github.com/spf13/cobra"
 )
 
 const jsonErrorCodeAnnotation = "multica-json-error-code"
 
-// Only the pipeline, project document and squad update commands opt into this
+// Pipeline, project document, squad update and issue create opt into this
 // contract. Other commands retain their existing human-readable error output.
 func commandJSONErrorCode(cmd *cobra.Command, args []string) (string, bool) {
 	code := ""
@@ -66,6 +67,11 @@ func printCommandJSONError(cmd *cobra.Command, err error, args []string) bool {
 		if json.Unmarshal([]byte(httpError.Body), &payload) != nil || payload == nil {
 			payload = map[string]json.RawMessage{}
 		}
+	}
+	var domainError *pipeline.Error
+	if errors.As(err, &domainError) {
+		payload["code"], _ = json.Marshal(domainError.Code)
+		payload["error"], _ = json.Marshal(domainError.Message)
 	}
 	if _, ok := payload["code"]; !ok {
 		payload["code"], _ = json.Marshal(code)

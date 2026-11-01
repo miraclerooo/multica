@@ -19,6 +19,7 @@ func TestPipelineAuthenticatedHTTPResultAndHumanGate(t *testing.T) {
 	f.SquadMember(t, squad, "agent", agent, testutil.Cols{"role": "custom"})
 	issue := f.Issue(t, "HTTP pipeline issue", testutil.Cols{"assignee_type": "squad", "assignee_id": squad})
 	f.Cleanup(t, "DELETE FROM pipeline_definition WHERE squad_id=$1", squad)
+	f.Cleanup(t, "DELETE FROM squad_pipeline WHERE squad_id=$1", squad)
 	f.Cleanup(t, "DELETE FROM pipeline_run WHERE issue_id=$1", issue)
 	f.Cleanup(t, "DELETE FROM agent_task_queue WHERE issue_id=$1", issue)
 	f.Cleanup(t, "DELETE FROM comment WHERE issue_id=$1", issue)

@@ -39,13 +39,14 @@ import (
 
 // IssueResponse is the JSON response for an issue.
 type IssueResponse struct {
-	ID          string  `json:"id"`
-	WorkspaceID string  `json:"workspace_id"`
-	Number      int32   `json:"number"`
-	Identifier  string  `json:"identifier"`
-	Title       string  `json:"title"`
-	Description *string `json:"description"`
-	Status      string  `json:"status"`
+	Execution   *service.IssueExecution `json:"execution"`
+	ID          string                  `json:"id"`
+	WorkspaceID string                  `json:"workspace_id"`
+	Number      int32                   `json:"number"`
+	Identifier  string                  `json:"identifier"`
+	Title       string                  `json:"title"`
+	Description *string                 `json:"description"`
+	Status      string                  `json:"status"`
 	// StatusCategory encodes lifecycle using the legacy seven-value wire enum. It is
 	// omitted when an endpoint cannot resolve a custom status, so consumers must
 	// fall back to their catalog rather than treat a blank as "no category".
@@ -478,6 +479,7 @@ func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
 		statusCategory = i.Status
 	}
 	return IssueResponse{
+		Execution:          service.ExecutionForIssue(i),
 		ID:                 uuidToString(i.ID),
 		WorkspaceID:        uuidToString(i.WorkspaceID),
 		Number:             i.Number,
@@ -3037,18 +3039,20 @@ func readRuntimeCLIVersion(metadata []byte) string {
 }
 
 type CreateIssueRequest struct {
-	Title         string   `json:"title"`
-	Description   *string  `json:"description"`
-	Status        string   `json:"status"`
-	Priority      string   `json:"priority"`
-	AssigneeType  *string  `json:"assignee_type"`
-	AssigneeID    *string  `json:"assignee_id"`
-	ParentIssueID *string  `json:"parent_issue_id"`
-	ProjectID     *string  `json:"project_id"`
-	Stage         *int32   `json:"stage,omitempty"`
-	StartDate     *string  `json:"start_date"`
-	DueDate       *string  `json:"due_date"`
-	AttachmentIDs []string `json:"attachment_ids,omitempty"`
+	Execution      *service.ExecutionSelection `json:"execution,omitempty"`
+	IdempotencyKey string                      `json:"idempotency_key,omitempty"`
+	Title          string                      `json:"title"`
+	Description    *string                     `json:"description"`
+	Status         string                      `json:"status"`
+	Priority       string                      `json:"priority"`
+	AssigneeType   *string                     `json:"assignee_type"`
+	AssigneeID     *string                     `json:"assignee_id"`
+	ParentIssueID  *string                     `json:"parent_issue_id"`
+	ProjectID      *string                     `json:"project_id"`
+	Stage          *int32                      `json:"stage,omitempty"`
+	StartDate      *string                     `json:"start_date"`
+	DueDate        *string                     `json:"due_date"`
+	AttachmentIDs  []string                    `json:"attachment_ids,omitempty"`
 	// LabelIDs are issue-scoped labels to attach to the new issue in the same
 	// transaction as the create. Unknown or non-issue ids are rejected with
 	// 400 (service.ErrIssueLabelNotFound) rather than silently dropped.
@@ -3249,6 +3253,10 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		assigneeID = id
 	}
 
+	if !validateExecutionIDs(w, req.Execution) {
+		return
+	}
+
 	var parentIssueID pgtype.UUID
 	var projectID pgtype.UUID
 	if req.ParentIssueID != nil {
@@ -3274,7 +3282,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if status, msg := h.validateAssigneePair(r.Context(), r, workspaceID, assigneeType, assigneeID); status != 0 {
+	if status, msg := h.validateAssigneePair(r.Context(), r, workspaceID, assigneeType, assigneeID, true); status != 0 {
 		writeError(w, status, msg)
 		return
 	}
@@ -3317,7 +3325,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 				if t, id, ok := issueworkflow.ResolveHandler(step, createWorkflowProject, handoffCreatorType, parseUUID(handoffCreatorID)); ok {
 					assigneeType = pgtype.Text{String: t, Valid: true}
 					assigneeID = id
-					if status, msg := h.validateAssigneePair(r.Context(), r, workspaceID, assigneeType, assigneeID); status != 0 {
+					if status, msg := h.validateAssigneePair(r.Context(), r, workspaceID, assigneeType, assigneeID, true); status != 0 {
 						writeError(w, status, msg)
 						return
 					}
@@ -3451,26 +3459,29 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res, err := h.IssueService.Create(r.Context(), service.IssueCreateParams{
-		WorkspaceID:    wsUUID,
-		Title:          req.Title,
-		Description:    ptrToText(req.Description),
-		Status:         status,
-		Priority:       priority,
-		AssigneeType:   assigneeType,
-		AssigneeID:     assigneeID,
-		CreatorType:    creatorType,
-		CreatorID:      parseUUID(actualCreatorID),
-		ParentIssueID:  parentIssueID,
-		ProjectID:      projectID,
-		StartDate:      startDate,
-		DueDate:        dueDate,
-		OriginType:     originType,
-		OriginID:       originID,
-		Stage:          ptrToInt4(req.Stage),
-		AttachmentIDs:  attachmentIDs,
-		LabelIDs:       labelIDs,
-		Properties:     properties,
-		AllowDuplicate: req.AllowDuplicate,
+		Execution:       req.Execution,
+		ExecutionUserID: h.invokeOriginatorFromRequest(r, creatorType, actualCreatorID),
+		IdempotencyKey:  req.IdempotencyKey,
+		WorkspaceID:     wsUUID,
+		Title:           req.Title,
+		Description:     ptrToText(req.Description),
+		Status:          status,
+		Priority:        priority,
+		AssigneeType:    assigneeType,
+		AssigneeID:      assigneeID,
+		CreatorType:     creatorType,
+		CreatorID:       parseUUID(actualCreatorID),
+		ParentIssueID:   parentIssueID,
+		ProjectID:       projectID,
+		StartDate:       startDate,
+		DueDate:         dueDate,
+		OriginType:      originType,
+		OriginID:        originID,
+		Stage:           ptrToInt4(req.Stage),
+		AttachmentIDs:   attachmentIDs,
+		LabelIDs:        labelIDs,
+		Properties:      properties,
+		AllowDuplicate:  req.AllowDuplicate,
 	}, service.IssueCreateOpts{
 		ActorID:          actualCreatorID,
 		AnalyticsAgentID: analyticsAgentID,
@@ -3493,6 +3504,12 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 			return map[string]any{"issue": payload}
 		},
 	})
+
+	var executionErr *pipeline.Error
+	if errors.As(err, &executionErr) {
+		writePipelineError(w, err)
+		return
+	}
 
 	if errors.Is(err, service.ErrActiveDuplicate) {
 		dup := *res.DuplicateIssue
@@ -4221,7 +4238,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 // Returns (statusCode, errorMessage). statusCode == 0 means the pair is valid;
 // callers should treat any non-zero status as a rejection and surface it back
 // to the client.
-func (h *Handler) validateAssigneePair(ctx context.Context, r *http.Request, workspaceID string, assigneeType pgtype.Text, assigneeID pgtype.UUID) (int, string) {
+func (h *Handler) validateAssigneePair(ctx context.Context, r *http.Request, workspaceID string, assigneeType pgtype.Text, assigneeID pgtype.UUID, creation ...bool) (int, string) {
 	// Both unset → unassigned issue, valid.
 	if !assigneeType.Valid && !assigneeID.Valid {
 		return 0, ""
@@ -4278,6 +4295,11 @@ func (h *Handler) validateAssigneePair(ctx context.Context, r *http.Request, wor
 		}
 		if squad.ArchivedAt.Valid {
 			return http.StatusBadRequest, "cannot assign to an archived squad"
+		}
+		// Creation validates the actual selected path under the squad lock in
+		// IssueService, rather than denying an override using an unrelated default.
+		if len(creation) > 0 && creation[0] && h.Pipelines != nil {
+			return 0, ""
 		}
 		if squad.InstructionsMode != "markdown" && squad.InstructionsMode != "pipeline" {
 			return http.StatusUnprocessableEntity, "unsupported_capability: unknown squad instructions_mode"

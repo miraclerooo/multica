@@ -1,11 +1,16 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { workspaceKeys } from "../workspace/queries";
+import { issueKeys } from "../issues/queries";
+import type { ExecutionSelection } from "./execution";
 import type { PipelineDecisionInput, PipelineDefinitionInput, PipelineListInput, PipelineRevisionInput, PipelineRunInput } from "./schema";
 
 export const pipelineKeys = {
   all: (wsId: string) => ["pipelines", wsId] as const,
   capabilities: (wsId: string) => [...pipelineKeys.all(wsId), "capabilities"] as const,
+  catalog: (wsId: string, input: PipelineListInput) => [...pipelineKeys.all(wsId), "catalog", input] as const,
+  catalogItem: (wsId: string, id: string) => [...pipelineKeys.all(wsId), "catalog", id] as const,
+  execution: (wsId: string, issueId: string) => [...pipelineKeys.all(wsId), "execution", issueId] as const,
   definitions: (wsId: string, input: PipelineListInput) => [...pipelineKeys.all(wsId), "definitions", input] as const,
   definition: (wsId: string, id: string) => [...pipelineKeys.all(wsId), "definition", id] as const,
   runs: (wsId: string, input: PipelineListInput) => [...pipelineKeys.all(wsId), "runs", input] as const,
@@ -14,6 +19,9 @@ export const pipelineKeys = {
   artifacts: (wsId: string, id: string, input: PipelineListInput) => [...pipelineKeys.run(wsId, id), "artifacts", input] as const,
 };
 export const pipelineCapabilitiesOptions = (wsId: string) => queryOptions({ queryKey: pipelineKeys.capabilities(wsId), queryFn: () => api.getPipelineCapabilities() });
+export const pipelineCatalogOptions = (wsId: string, input: PipelineListInput) => queryOptions({queryKey: pipelineKeys.catalog(wsId, input), queryFn: () => api.listPipelineCatalog(input)});
+export const pipelineCatalogItemOptions = (wsId: string, id: string) => queryOptions({queryKey: pipelineKeys.catalogItem(wsId, id), queryFn: () => api.getPipelineCatalog(id), enabled: !!id});
+export const issueExecutionOptions = (wsId: string, issueId: string) => queryOptions({queryKey: pipelineKeys.execution(wsId, issueId), queryFn: () => api.getIssueExecution(issueId), enabled: !!issueId});
 export const pipelineDefinitionsOptions = (wsId: string, input: PipelineListInput) => queryOptions({ queryKey: pipelineKeys.definitions(wsId, input), queryFn: () => api.listPipelineDefinitions(input) });
 export const pipelineDefinitionOptions = (wsId: string, id: string) => queryOptions({ queryKey: pipelineKeys.definition(wsId, id), queryFn: () => api.getPipelineDefinition(id), enabled: !!id });
 export const pipelineRunsOptions = (wsId: string, input: PipelineListInput) => queryOptions({ queryKey: pipelineKeys.runs(wsId, input), queryFn: () => api.listPipelineRuns(input) });
@@ -33,6 +41,10 @@ export function usePipelineInvalidation(wsId: string) {
   };
 }
 export function useCreatePipelineDefinition(wsId: string) { const invalidate = usePipelineInvalidation(wsId); return useMutation({ mutationFn: (input: PipelineDefinitionInput) => api.createPipelineDefinition(input), onSuccess: invalidate }); }
+export function useCreatePipelineCatalog(wsId: string) { const invalidate = usePipelineInvalidation(wsId); return useMutation({mutationFn: (input: import("./schema").PipelineCatalogCreateInput) => api.createPipelineCatalog(input), onSuccess: invalidate}); }
+export function useRenamePipelineCatalog(wsId: string, id: string) { const invalidate = usePipelineInvalidation(wsId); return useMutation({mutationFn: (input: {name: string; expected_revision: number}) => api.renamePipelineCatalog(id, input), onSuccess: invalidate}); }
+export function useStartIssueExecution(wsId: string, issueId: string) { const invalidate = usePipelineInvalidation(wsId); const qc = useQueryClient(); return useMutation({mutationFn: () => api.startIssueExecution(issueId), onSettled: () => Promise.all([invalidate(), qc.invalidateQueries({queryKey: issueKeys.detail(wsId, issueId)})])}); }
+export function usePreflightPipelineExecution() { return useMutation({mutationFn: (input: {squad_id: string; execution?: ExecutionSelection}) => api.preflightPipelineExecution(input)}); }
 export function useCreatePipelineRun(wsId: string) { const invalidate = usePipelineInvalidation(wsId); return useMutation({ mutationFn: (input: PipelineRunInput) => api.createPipelineRun(input), onSuccess: invalidate }); }
 export function usePipelineDecision(wsId: string, id: string, job: string) { const invalidate = usePipelineInvalidation(wsId); return useMutation({ mutationFn: (input: PipelineDecisionInput) => api.decidePipelineJob(id, job, input), onSettled: invalidate }); }
 export function useRetryPipelineJob(wsId: string, id: string, job: string) { const invalidate = usePipelineInvalidation(wsId); return useMutation({ mutationFn: (input: PipelineRevisionInput) => api.retryPipelineJob(id, job, input), onSettled: invalidate }); }

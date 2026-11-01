@@ -107,8 +107,11 @@ type Config struct {
 	LegacyDaemonIDs                []string // historical daemon_ids this machine may have registered under; reported at register time so the server can merge old runtime rows
 	DeviceName                     string
 	RuntimeName                    string
-	CLIVersion                     string                // multica CLI version (e.g. "0.1.13")
-	CLICommit                      string                // full build revision embedded in the running CLI; empty/unknown if unavailable
+	CLIVersion                     string // multica CLI version (e.g. "0.1.13")
+	CLICommit                      string // full build revision embedded in the running CLI; empty/unknown if unavailable
+	BuildReleaseChannel            string
+	BuildUpgradeGuideURL           string
+	ReportBuildContract            bool
 	LaunchedBy                     string                // "desktop" when spawned by the Electron app, empty for standalone
 	Profile                        string                // profile name (empty = default)
 	Agents                         map[string]AgentEntry // keyed by provider: claude, codebuddy, codex, copilot, opencode, codearts, deveco, openclaw, hermes, pi, cursor, kimi, reasonix, dsh, kiro, antigravity, qoder, qoderclicn, traecli, grok, qwen, qwenpaw, mcode, dim, zeroclaw (plus built-in runtime identities from agent.BuiltinRuntimes, e.g. omp)

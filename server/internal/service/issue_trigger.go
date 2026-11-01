@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
@@ -189,10 +190,25 @@ func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput,
 			return IssueRunTrigger{}, false
 		}
 
-		if squad.InstructionsMode != "markdown" && squad.InstructionsMode != "pipeline" {
+		if SquadExecutionMode(issue, squad) != "markdown" && SquadExecutionMode(issue, squad) != "pipeline" {
 			return IssueRunTrigger{}, false
 		}
-		if squad.InstructionsMode == "pipeline" {
+		if SquadExecutionMode(issue, squad) == "pipeline" {
+			if e := ExecutionForIssue(issue); e != nil {
+				if e.State == "waiting_runtime" {
+					return IssueRunTrigger{}, false
+				}
+				for job, id := range e.Bindings {
+					if strings.HasPrefix(job, "owner:") {
+						continue
+					}
+					a, err := s.Queries.GetAgent(ctx, pipelineUUID(id))
+					if err != nil || !canAccess(a) {
+						return IssueRunTrigger{}, false
+					}
+				}
+				return IssueRunTrigger{IssueID: issue.ID, AgentID: squad.LeaderID, AssigneeType: "squad", Source: source}, true
+			}
 			if s.TaskService == nil || s.TaskService.Pipelines == nil || squad.ArchivedAt.Valid {
 				return IssueRunTrigger{}, false
 			}

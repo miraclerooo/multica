@@ -27,6 +27,7 @@ export const PipelineCapabilitiesSchema = z.object({
   features: z.record(z.string(), z.boolean()), limits: z.record(z.string(), z.number()).default({}),
 }).loose();
 export const PipelineDefinitionSchema = z.object({
+	pipeline_id: z.string().optional(),
   id: z.string(), workspace_id: z.string(), squad_id: z.string(), revision: z.number(),
   kind: z.string(), source: z.string(), source_hash: z.string(), compiler_version: z.string(),
   plan: PipelinePlanSchema, creator_id: z.string(), created_at: z.string(),
@@ -54,6 +55,7 @@ export const PipelineJobSchema = z.object({
   attempts: z.array(PipelineAttemptSchema), decision: PipelineDecisionSchema.nullable(),
 }).loose();
 export const PipelineRunSchema = z.object({
+  pipeline_id: z.string().optional(), pipeline_name: z.string().optional(), definition_revision: z.number().optional(),
   id: z.string(), workspace_id: z.string(), issue_id: z.string(), squad_id: z.string(), definition_id: z.string(),
   creator_id: z.string(), revision: z.number(), status: z.string(), reason: z.string(), plan: PipelinePlanSchema,
   policy: z.string(), issue_title: z.string(), issue_description: z.string(), issue_revision: z.number(),
@@ -61,6 +63,16 @@ export const PipelineRunSchema = z.object({
   jobs: z.array(PipelineJobSchema), created_at: z.string(), updated_at: z.string(),
 }).loose();
 export const PipelineDefinitionListSchema = z.object({ items: z.array(PipelineDefinitionSchema), limit: z.number(), offset: z.number() }).loose();
+export const PipelineCatalogSchema = z.object({
+  id: z.string(), workspace_id: z.string(), squad_id: z.string(), name: z.string(), revision: z.number(),
+  executable_definition_id: z.string().nullable().default(null), legacy: z.boolean().default(false),
+  created_at: z.string(), updated_at: z.string(),
+}).loose();
+export const PipelineCatalogListSchema = z.object({items: z.array(PipelineCatalogSchema), limit: z.number(), offset: z.number()}).loose();
+export const PipelineCatalogCreateResultSchema = z.object({pipeline: PipelineCatalogSchema, definition: PipelineDefinitionSchema}).loose();
+export type PipelineCatalog = z.infer<typeof PipelineCatalogSchema>;
+export type PipelineCatalogCreateResult = z.infer<typeof PipelineCatalogCreateResultSchema>;
+export interface PipelineCatalogCreateInput {name: string; squad_id: string; source: string; idempotency_key: string; activate?: boolean; expected_revision?: number}
 export const PipelineRunListSchema = z.object({ items: z.array(PipelineRunSchema), limit: z.number(), offset: z.number() }).loose();
 export const PipelineArtifactListSchema = z.object({ items: z.array(PipelineArtifactSchema), limit: z.number(), offset: z.number() }).loose();
 export const EMPTY_PIPELINE_VALIDATION: z.infer<typeof PipelineValidationSchema> = {
@@ -77,9 +89,9 @@ export type PipelineValidation = z.infer<typeof PipelineValidationSchema>;
 export type PipelineCapabilities = z.infer<typeof PipelineCapabilitiesSchema>;
 
 export interface PipelineSourceInput { source: string; squad_id?: string }
-export interface PipelineDefinitionInput extends PipelineSourceInput { squad_id: string; idempotency_key: string; activate?: boolean; expected_revision?: number }
+export interface PipelineDefinitionInput extends PipelineSourceInput { squad_id: string; idempotency_key: string; activate?: boolean; expected_revision?: number; pipeline_id?: string; expected_pipeline_revision?: number }
 export interface PipelineRunInput { issue_id: string; squad_id: string; definition_id?: string; idempotency_key: string }
 export interface PipelineRevisionInput { expected_revision: number; idempotency_key: string }
 export interface PipelineDecisionInput extends PipelineRevisionInput { decision: "approve" | "reject"; reason?: string }
 export interface PipelineReportInput { attempt: number; result: "succeeded" | "failed" | "blocked"; report: string; artifacts: { path: string; attachment_id?: string; document_id?: string; document_version?: number; repo?: string; ref?: string; sha?: string }[]; idempotency_key: string }
-export interface PipelineListInput { issue_id?: string; squad_id?: string; job_id?: string; limit?: number; offset?: number }
+export interface PipelineListInput { issue_id?: string; squad_id?: string; pipeline_id?: string; job_id?: string; limit?: number; offset?: number }
