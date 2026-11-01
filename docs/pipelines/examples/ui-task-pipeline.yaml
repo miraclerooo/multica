@@ -1,0 +1,86 @@
+kind: gitlab_yaml
+stages: [plan, plan_review, design, design_review, implement, verify, approve]
+
+plan:
+  stage: plan
+  tags: [leader]
+  instructions: |
+    阅读需求、评论和附件，整理界面目标、用户流程、范围、验收标准与未决问题。
+    将方案写入 reports/plan.md，交付给用户审核并作为设计输入。
+    完成时在任务回复及最终消息中分别单独列出：
+    ARTIFACT: reports/plan.md
+    REF: <实际交付分支或提交，不要保留占位符>
+    通过当前作业的 job report 接口提交结果：方案可评审为 succeeded，输入不足无法形成方案为 blocked。
+    等待后续 plan_approval 是正常流程，不把该人工审核本身记为本作业阻塞。
+  artifacts:
+    paths: [reports/plan.md]
+
+plan_approval:
+  stage: plan_review
+  needs: [plan]
+  when: manual
+  allow_failure: false
+
+design:
+  stage: design
+  needs: [plan, plan_approval]
+  tags: [leader]
+  instructions: |
+    读取已批准的 plan 交付物和审批意见，制作可供人工评审的界面原型。
+    覆盖主流程、空态、错误、权限、窄屏及键盘交互。
+    将交互说明和验收对应关系写入 reports/design.md，
+    将可打开的自包含原型写入 reports/prototype.html。
+    本作业不实施产品代码，等待 design_approval 后再进入实施。
+    完成时在任务回复及最终消息中分别单独列出：
+    ARTIFACT: reports/design.md
+    ARTIFACT: reports/prototype.html
+    REF: <实际交付分支或提交，不要保留占位符>
+    通过当前作业的 job report 接口提交结果：完成为 succeeded，无法完成为 blocked。
+  artifacts:
+    paths: [reports/design.md, reports/prototype.html]
+
+design_approval:
+  stage: design_review
+  needs: [design]
+  when: manual
+  allow_failure: false
+
+implement:
+  stage: implement
+  needs: [plan, design, design_approval]
+  tags: [leader]
+  instructions: |
+    读取已批准的方案、实际原型、交互说明与审批意见，实施产品改动。
+    运行适当的本地检查，交付实际代码。
+    将变更、检查证据、未解决问题写入 reports/implementation.md，
+    包含代码仓库、基线、实际交付提交及分支或 PR。
+    发现需要改变已批准范围或原型时记录阻塞并停止，不自行变更审批内容。
+    完成时在任务回复及最终消息中分别单独列出：
+    ARTIFACT: reports/implementation.md
+    REF: <实际交付分支或提交，不要保留占位符>
+    通过当前作业的 job report 接口提交结果：完成为 succeeded，检查失败为 failed，无法继续为 blocked。
+  artifacts:
+    paths: [reports/implementation.md]
+
+verify:
+  stage: verify
+  needs: [plan, design, implement]
+  tags: [leader]
+  instructions: |
+    读取方案、原型和实现的实际交付物，针对准确交付提交验证。
+    覆盖审批过的交互、异常状态、权限、Web/Desktop 适配及已承诺的移动端范围。
+    将证据、未通过项、剩余风险及验收建议写入 reports/verification.md。
+    给出通过、需返工或阻塞的建议；报告完成不等于检查通过。
+    本地检查与外部 CI 状态分别记录。
+    完成时在任务回复及最终消息中分别单独列出：
+    ARTIFACT: reports/verification.md
+    REF: <实际交付分支或提交，不要保留占位符>
+    通过当前作业的 job report 接口提交结果：检查通过为 succeeded，未通过为 failed，无法验证为 blocked。
+  artifacts:
+    paths: [reports/verification.md]
+
+accept:
+  stage: approve
+  needs: [verify]
+  when: manual
+  allow_failure: false

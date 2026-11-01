@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/analytics"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
+	"github.com/multica-ai/multica/server/internal/pipeline"
 	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -895,7 +896,7 @@ func (h *Handler) CreateAutopilot(w http.ResponseWriter, r *http.Request) {
 	// Keep save-time readiness validation in the same transaction as the
 	// insert. The assignment lock serializes this path with Runtime teardown,
 	// so an active Autopilot cannot slip in after teardown's pause sweep.
-	if !h.validateAutopilotAssigneeForSave(w, r, qtx, assigneeType, assigneeUUID, wsUUID, true) {
+	if !h.validateAutopilotAssigneeForSave(w, r, qtx, assigneeType, assigneeUUID, wsUUID, true, req.ExecutionMode) {
 		return
 	}
 
@@ -1180,9 +1181,13 @@ func (h *Handler) UpdateAutopilot(w http.ResponseWriter, r *http.Request) {
 	if req.Status != nil {
 		nextStatus = *req.Status
 	}
-	validateAssignee := typeSent || idSent || (req.Status != nil && *req.Status == "active")
+	nextMode := prev.ExecutionMode
+	if req.ExecutionMode != nil {
+		nextMode = *req.ExecutionMode
+	}
+	validateAssignee := req.ExecutionMode != nil || typeSent || idSent || (req.Status != nil && *req.Status == "active")
 	if validateAssignee && !h.validateAutopilotAssigneeForSave(
-		w, r, qtx, nextType, nextID, prev.WorkspaceID, nextStatus == "active",
+		w, r, qtx, nextType, nextID, prev.WorkspaceID, nextStatus == "active", nextMode,
 	) {
 		return
 	}
@@ -1804,6 +1809,7 @@ func (h *Handler) validateAutopilotAssigneeForSave(
 	assigneeType string,
 	assigneeID, workspaceID pgtype.UUID,
 	requireRuntime bool,
+	executionModes ...string,
 ) bool {
 	switch assigneeType {
 	case "agent":
@@ -1842,6 +1848,31 @@ func (h *Handler) validateAutopilotAssigneeForSave(
 		if squad.ArchivedAt.Valid {
 			writeError(w, http.StatusUnprocessableEntity, "squad is archived; pick a different squad")
 			return false
+		}
+		if squad.InstructionsMode != "markdown" && squad.InstructionsMode != "pipeline" {
+			writePipelineError(w, pipeline.Fail("unsupported_capability", "unknown squad instructions_mode"))
+			return false
+		}
+		if squad.InstructionsMode == "pipeline" {
+			if len(executionModes) > 0 && executionModes[0] == "run_only" {
+				writePipelineError(w, pipeline.Fail("unsupported_capability", "pipeline squads require create_issue automation"))
+				return false
+			}
+			d, e := q.GetPipelineDefinition(r.Context(), db.GetPipelineDefinitionParams{ID: squad.PipelineDefinitionID, WorkspaceID: workspaceID})
+			if e != nil || d.SquadID != squad.ID {
+				writePipelineError(w, pipeline.Fail("definition_not_owned", "squad needs an owned definition"))
+				return false
+			}
+			var plan pipeline.Plan
+			if json.Unmarshal(d.Plan, &plan) != nil {
+				writeError(w, 422, "invalid pipeline plan")
+				return false
+			}
+			if _, d := h.Pipelines.Bindings(r.Context(), q, squad, plan, requestUserID(r)); len(d) > 0 {
+				writePipelineError(w, pipeline.Fail(d[0].Code, d[0].Message))
+				return false
+			}
+			return true
 		}
 		leader, err := q.LockAgentForAutopilotAssignment(r.Context(), db.LockAgentForAutopilotAssignmentParams{
 			ID:          squad.LeaderID,

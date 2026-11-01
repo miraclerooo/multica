@@ -302,6 +302,9 @@ export interface TaskCancellationActor {
 }
 
 export interface AgentTask {
+  pipeline_run_id?: string | null;
+  pipeline_job_id?: string | null;
+  pipeline_attempt?: number | null;
   wakeup_id?: string;
   id: string;
   agent_id: string;

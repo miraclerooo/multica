@@ -21,6 +21,9 @@ type qoderIssueChange struct {
 // this run took ownership of can advance to review. A revision mismatch also
 // protects edits away and back, reassignment, and concurrent human decisions.
 func syncQoderIssue(ctx context.Context, q *db.Queries, task db.AgentTaskQueue, completing bool) (*qoderIssueChange, error) {
+	if task.PipelineRunID.Valid {
+		return nil, nil
+	}
 	if !task.IssueID.Valid || !task.RuntimeID.Valid {
 		return nil, nil
 	}

@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
+	"github.com/multica-ai/multica/server/internal/pipeline"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -185,6 +187,29 @@ func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput,
 		})
 		if err != nil {
 			return IssueRunTrigger{}, false
+		}
+
+		if squad.InstructionsMode != "markdown" && squad.InstructionsMode != "pipeline" {
+			return IssueRunTrigger{}, false
+		}
+		if squad.InstructionsMode == "pipeline" {
+			if s.TaskService == nil || s.TaskService.Pipelines == nil || squad.ArchivedAt.Valid {
+				return IssueRunTrigger{}, false
+			}
+			d, err := s.Queries.GetPipelineDefinition(ctx, db.GetPipelineDefinitionParams{ID: squad.PipelineDefinitionID, WorkspaceID: issue.WorkspaceID})
+			if err != nil || d.SquadID != squad.ID {
+				return IssueRunTrigger{}, false
+			}
+			var plan pipeline.Plan
+			if json.Unmarshal(d.Plan, &plan) != nil {
+				return IssueRunTrigger{}, false
+			}
+			resolver := *s.TaskService.Pipelines
+			resolver.CanInvoke = func(ctx context.Context, a db.Agent, _, _ string) bool { return canAccess(a) }
+			if _, diagnostics := resolver.Bindings(ctx, s.Queries, squad, plan, ""); len(diagnostics) > 0 {
+				return IssueRunTrigger{}, false
+			}
+			return IssueRunTrigger{IssueID: issue.ID, AgentID: squad.LeaderID, AssigneeType: "squad", Source: source}, true
 		}
 		leader, err := s.Queries.GetAgent(ctx, squad.LeaderID)
 		if err != nil {

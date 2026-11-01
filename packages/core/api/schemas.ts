@@ -2032,6 +2032,9 @@ const TaskUsageSchema = z.object({
 }).loose();
 
 export const AgentTaskSchema = z.object({
+  pipeline_run_id: z.string().nullable().optional(),
+  pipeline_job_id: z.string().nullable().optional(),
+  pipeline_attempt: z.number().nullable().optional(),
   wakeup_id: z.string().optional().catch(undefined),
   cancelled_by_comment_change: z.boolean().optional().catch(undefined),
   cancelled_by: TaskCancellationActorSchema.optional().catch(undefined),
@@ -2386,6 +2389,9 @@ const SquadMemberPreviewSchema = z.object({
 }).loose();
 
 export const SquadSchema = z.object({
+  instructions_mode: z.string().default("markdown"),
+  pipeline_definition_id: z.string().nullable().default(null),
+  revision: z.number().default(1),
   id: z.string(),
   workspace_id: z.string(),
   name: z.string(),

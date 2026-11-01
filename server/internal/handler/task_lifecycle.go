@@ -244,6 +244,10 @@ func (h *Handler) rerunIssue(w http.ResponseWriter, r *http.Request, issue db.Is
 	}
 
 	task, err := h.TaskService.RerunIssue(r.Context(), issue.ID, sourceTaskID, pgtype.UUID{}, actorUserID, fresh, canInvoke)
+	if errors.Is(err, service.ErrPipelineManagedTask) {
+		writeErrorCode(w, http.StatusConflict, "pipeline_managed_task", "Use pipeline run create or pipeline job retry.")
+		return
+	}
 	if errors.Is(err, service.ErrRerunInvokeNotAllowed) {
 		h.writeDispatchBlocked(w, http.StatusForbidden, ReasonInvocationNotAllowed)
 		return

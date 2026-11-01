@@ -9,6 +9,9 @@ export interface SquadMemberPreview {
 }
 
 export interface Squad {
+  instructions_mode?: string;
+  pipeline_definition_id?: string | null;
+  revision?: number;
   id: string;
   workspace_id: string;
   name: string;
@@ -53,6 +56,9 @@ export interface CreateSquadRequest {
 }
 
 export interface UpdateSquadRequest {
+  instructions_mode?: "markdown" | "pipeline";
+  pipeline_definition_id?: string;
+  expected_revision?: number;
   name?: string;
   description?: string;
   instructions?: string;

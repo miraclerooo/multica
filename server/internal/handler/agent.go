@@ -385,6 +385,9 @@ type TaskCancellationActor struct {
 }
 
 type AgentTaskResponse struct {
+	PipelineRunID            *string                `json:"pipeline_run_id,omitempty"`
+	PipelineJobID            *string                `json:"pipeline_job_id,omitempty"`
+	PipelineAttempt          *int32                 `json:"pipeline_attempt,omitempty"`
 	StartClaimSupported      bool                   `json:"start_claim_supported,omitempty"`
 	CancelledByCommentChange bool                   `json:"cancelled_by_comment_change,omitempty"`
 	CancelledBy              *TaskCancellationActor `json:"cancelled_by,omitempty"`
@@ -884,6 +887,9 @@ func taskToResponse(t db.AgentTaskQueue, workspaceID string) AgentTaskResponse {
 		handoffNote = t.HandoffNote.String
 	}
 	return AgentTaskResponse{
+		PipelineRunID:   uuidToPtr(t.PipelineRunID),
+		PipelineJobID:   textToPtr(t.PipelineJobID),
+		PipelineAttempt: int4ToPtr(t.PipelineAttempt),
 		// Task-scoped provenance must not transfer through copied retry context.
 		CancelledByCommentChange: t.Status == "cancelled" && cancellation.TaskID != "" && cancellation.TaskID == uuidToString(t.ID),
 		CancelledBy:              taskCancellationActorToResponse(t),

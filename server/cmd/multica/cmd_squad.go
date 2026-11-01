@@ -164,10 +164,11 @@ func runSquadCreate(cmd *cobra.Command, _ []string) error {
 // ── Update ──────────────────────────────────────────────────────────────────
 
 var squadUpdateCmd = &cobra.Command{
-	Use:   "update <squad-id>",
-	Short: "Update a squad",
-	Args:  exactArgs(1),
-	RunE:  runSquadUpdate,
+	Use:         "update <squad-id>",
+	Short:       "Update a squad",
+	Annotations: map[string]string{jsonErrorCodeAnnotation: "command_failed"},
+	Args:        exactArgs(1),
+	RunE:        runSquadUpdate,
 }
 
 func runSquadUpdate(cmd *cobra.Command, args []string) error {
@@ -179,6 +180,20 @@ func runSquadUpdate(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	body := map[string]any{}
+	for _, f := range []string{"instructions-mode", "pipeline-definition"} {
+		if cmd.Flags().Changed(f) {
+			field := "instructions_mode"
+			if f == "pipeline-definition" {
+				field = "pipeline_definition_id"
+			}
+			v, _ := cmd.Flags().GetString(f)
+			body[field] = v
+		}
+	}
+	if cmd.Flags().Changed("expected-revision") {
+		v, _ := cmd.Flags().GetInt64("expected-revision")
+		body["expected_revision"] = v
+	}
 	if cmd.Flags().Changed("name") {
 		v, _ := cmd.Flags().GetString("name")
 		body["name"] = v
@@ -521,6 +536,9 @@ func init() {
 	squadUpdateCmd.Flags().String("name", "", "New name")
 	squadUpdateCmd.Flags().String("description", "", "New description")
 	squadUpdateCmd.Flags().String("instructions", "", "New instructions")
+	squadUpdateCmd.Flags().String("instructions-mode", "", "markdown or pipeline; requires --expected-revision")
+	squadUpdateCmd.Flags().String("pipeline-definition", "", "Definition owned by this squad")
+	squadUpdateCmd.Flags().Int64("expected-revision", 0, "Squad revision read from squad get")
 	squadUpdateCmd.Flags().String("leader", "", "New leader agent (name or ID)")
 	squadUpdateCmd.Flags().String("avatar-url", "", "New avatar URL")
 	squadUpdateCmd.Flags().String("output", "json", "Output format: table or json")

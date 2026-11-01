@@ -38,6 +38,7 @@ import (
 )
 
 type TaskService struct {
+	Pipelines *PipelineService
 	// RecordMemberActivity enables the member_delegation_day ledger, which
 	// only feeds self-host telemetry. Off unless the server enables telemetry
 	// at startup, so DO_NOT_TRACK stops collection, not just delivery.
@@ -1440,6 +1441,9 @@ func (s *TaskService) EnqueueTaskForThreadParent(ctx context.Context, issue db.I
 // leader task was triggered (comment @squad, issue assign, autopilot,
 // sub-issue done callback). See migration 127.
 func (s *TaskService) EnqueueTaskForSquadLeader(ctx context.Context, issue db.Issue, leaderID pgtype.UUID, squadID pgtype.UUID, triggerCommentID pgtype.UUID, origin RunOrigin) (db.AgentTaskQueue, error) {
+	if t, handled, err := s.enqueuePipelineSquad(ctx, issue, squadID, pgtype.UUID{}, triggerCommentID, ""); handled {
+		return t, err
+	}
 	return s.enqueueMentionTask(ctx, issue, leaderID, triggerCommentID, true, squadID, false, "", pgtype.UUID{}, pgtype.UUID{}, origin)
 }
 
@@ -1448,12 +1452,18 @@ func (s *TaskService) EnqueueTaskForSquadLeader(ctx context.Context, issue db.Is
 // assign/promote and becomes the accountable human (MUL-4302 §4); invalid when
 // the caller has no member actor.
 func (s *TaskService) EnqueueTaskForSquadLeaderByActor(ctx context.Context, issue db.Issue, leaderID pgtype.UUID, squadID pgtype.UUID, actorUserID pgtype.UUID) (db.AgentTaskQueue, error) {
+	if t, handled, err := s.enqueuePipelineSquad(ctx, issue, squadID, actorUserID, pgtype.UUID{}, ""); handled {
+		return t, err
+	}
 	return s.enqueueMentionTask(ctx, issue, leaderID, pgtype.UUID{}, true, squadID, false, "", actorUserID, pgtype.UUID{}, OriginDerived)
 }
 
 // EnqueueTaskForSquadLeaderWithHandoff is the squad equivalent of
 // EnqueueTaskForIssueWithHandoff.
 func (s *TaskService) EnqueueTaskForSquadLeaderWithHandoff(ctx context.Context, issue db.Issue, leaderID pgtype.UUID, squadID pgtype.UUID, handoffNote string, actorUserID pgtype.UUID) (db.AgentTaskQueue, error) {
+	if t, handled, err := s.enqueuePipelineSquad(ctx, issue, squadID, actorUserID, pgtype.UUID{}, handoffNote); handled {
+		return t, err
+	}
 	return s.enqueueMentionTask(ctx, issue, leaderID, pgtype.UUID{}, true, squadID, false, handoffNote, actorUserID, pgtype.UUID{}, OriginDerived)
 }
 
@@ -4805,6 +4815,9 @@ func (s *TaskService) CompleteTaskWithTransition(ctx context.Context, taskID pgt
 
 	// Broadcast
 	s.broadcastTaskEvent(ctx, protocol.EventTaskCompleted, task)
+	if s.Pipelines != nil {
+		s.Pipelines.TaskFinished(ctx, task)
+	}
 
 	return &task, true, nil
 }
@@ -5428,6 +5441,9 @@ func (s *TaskService) FailTaskWithTransition(ctx context.Context, taskID pgtype.
 	// was persisted in the chat transcript. A retry-pending attempt stays silent
 	// because its child reports the eventual terminal outcome.
 	s.broadcastTaskFailedEvent(ctx, task, errMsg, failureReason, retried != nil)
+	if s.Pipelines != nil {
+		s.Pipelines.TaskFinished(ctx, task)
+	}
 
 	return &task, true, nil
 }
@@ -5586,7 +5602,7 @@ func ResumeUnsafeFailure(failureReason, errorText string) bool {
 // a human may have edited in the meantime, so replaying the failed attempt is
 // never what the workspace wants.
 func retryEligible(failureReason string, t db.AgentTaskQueue) bool {
-	return retryableReasons[failureReason] &&
+	return !t.PipelineRunID.Valid && retryableReasons[failureReason] &&
 		t.Attempt < retryAttemptCeiling(failureReason, t.MaxAttempts) &&
 		!t.AutopilotRunID.Valid &&
 		!IsTriageTask(t) &&
@@ -5640,6 +5656,9 @@ func hasRunnableSuccessor(ctx context.Context, q *db.Queries, task db.AgentTaskQ
 // Autopilot tasks are NOT auto-retried here; the autopilot scheduler owns
 // its own re-run cadence and we don't want to double-fire it.
 func (s *TaskService) MaybeRetryFailedTask(ctx context.Context, parent db.AgentTaskQueue) (*db.AgentTaskQueue, error) {
+	if parent.PipelineRunID.Valid {
+		return nil, nil
+	}
 	if parent.Status != "failed" {
 		return nil, nil
 	}
@@ -5849,6 +5868,8 @@ func transferPendingSourceContextToRetry(ctx context.Context, q *db.Queries, par
 // to a structured 403 (no task was cancelled or created).
 var ErrRerunInvokeNotAllowed = errors.New("rerun: operator not allowed to invoke target agent")
 
+var ErrPipelineManagedTask = errors.New("pipeline execution requires pipeline run create or job retry")
+
 // IsFreshRerun reports whether a manual rerun explicitly discards continuity.
 // The source lineage stays intact for attribution and execution history.
 func IsFreshRerun(task db.AgentTaskQueue) bool {
@@ -5874,6 +5895,16 @@ func (s *TaskService) RerunIssue(ctx context.Context, issueID pgtype.UUID, sourc
 	issue, err := s.Queries.GetIssue(ctx, issueID)
 	if err != nil {
 		return nil, fmt.Errorf("load issue: %w", err)
+	}
+	if !sourceTaskID.Valid && s.Pipelines != nil {
+		if _, e := s.Queries.GetActivePipelineRun(ctx, db.GetActivePipelineRunParams{WorkspaceID: issue.WorkspaceID, IssueID: issue.ID}); e == nil {
+			return nil, ErrPipelineManagedTask
+		}
+		if issue.AssigneeType.String == "squad" {
+			if squad, e := s.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{ID: issue.AssigneeID, WorkspaceID: issue.WorkspaceID}); e == nil && squad.InstructionsMode != "markdown" {
+				return nil, ErrPipelineManagedTask
+			}
+		}
 	}
 	// In Triage a rerun follows its source, and the decision is made here —
 	// before anything is cancelled. The queue door would refuse a derived rerun
@@ -5902,6 +5933,9 @@ func (s *TaskService) RerunIssue(ctx context.Context, issueID pgtype.UUID, sourc
 		sourceTask, err := s.Queries.GetAgentTask(ctx, sourceTaskID)
 		if err != nil {
 			return nil, fmt.Errorf("load source task: %w", err)
+		}
+		if sourceTask.PipelineRunID.Valid {
+			return nil, ErrPipelineManagedTask
 		}
 		if !sourceTask.IssueID.Valid || util.UUIDToString(sourceTask.IssueID) != util.UUIDToString(issueID) {
 			return nil, fmt.Errorf("source task does not belong to this issue")
@@ -6252,6 +6286,13 @@ func (s *TaskService) HandleFailedTasks(ctx context.Context, tasks []db.AgentTas
 	retried := 0
 
 	for _, t := range tasks {
+		if t.PipelineRunID.Valid {
+			if s.Pipelines != nil {
+				s.Pipelines.Recover(ctx)
+			}
+			s.ReconcileAgentStatus(ctx, t.AgentID)
+			continue
+		}
 		// Auto-retry first so the issue stays in_progress rather than
 		// flapping todo → in_progress within a tick.
 		retryPending := false
@@ -6930,6 +6971,9 @@ func (s *TaskService) dispatchDelegatedFailureRecovery(ctx context.Context, targ
 // delegated terminal; the production terminal paths deliberately retain their
 // legacy raw-error notice alongside the richer coordinator recovery signal.
 func (s *TaskService) recoverDelegatedTaskFailure(ctx context.Context, failed db.AgentTaskQueue) (handled bool, err error) {
+	if failed.PipelineRunID.Valid {
+		return true, nil
+	}
 	target, _, err := s.ensureDelegatedFailureRecoveryComment(ctx, failed.ID)
 	if err != nil || target == nil {
 		return false, err

@@ -753,6 +753,10 @@ func main() {
 	// backlog, and a departed one retires everything it owned at once.
 	go h.RunQoderConnections(sweepCtx, pool, "http://localhost:"+port)
 	go runRuntimeSweeper(sweepCtx, queries, liveness, taskSvc, bus, runtimeReconnectGrace)
+	go func() {
+		h.Pipelines.Recover(sweepCtx)
+		runPeriodicSweep(sweepCtx, 2*time.Second, func() { h.Pipelines.Recover(sweepCtx) })
+	}()
 	if telemetryWorker != nil {
 		go telemetryWorker.Run(sweepCtx)
 	}

@@ -213,6 +213,7 @@ type RuntimeRecoveryNotifier interface {
 }
 
 type Handler struct {
+	Pipelines *service.PipelineService
 	Queries                *db.Queries
 	ReadSelector           *dbreader.Selector
 	DB                     dbExecutor
@@ -554,6 +555,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	h.PRRefresh = ghsnapshot.NewManager(ghClient, queries, txStarter, h.broadcastPRSnapshotApplied)
 	taskSvc.PRSnapshotsEnabled = h.PRRefresh.Enabled()
 
+	h.initPipelines(ghClient)
 	return h
 }
 

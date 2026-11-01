@@ -67,20 +67,7 @@ func projectDocumentToResponse(d db.ProjectDocument) ProjectDocumentResponse {
 }
 
 func (h *Handler) ListProjectDocuments(w http.ResponseWriter, r *http.Request) {
-	p, ok := h.loadProjectForResource(w, r, chi.URLParam(r, "id"))
-	if !ok {
-		return
-	}
-	rows, err := h.Queries.ListProjectDocuments(r.Context(), db.ListProjectDocumentsParams{WorkspaceID: p.WorkspaceID, ProjectID: p.ID})
-	if err != nil {
-		writeError(w, 500, "failed to list documents")
-		return
-	}
-	documents := make([]ProjectDocumentResponse, 0, len(rows))
-	for _, d := range rows {
-		documents = append(documents, projectDocumentToResponse(d))
-	}
-	writeJSON(w, 200, map[string]any{"documents": documents, "total": len(documents)})
+	h.listProjectDocumentsGrouped(w, r)
 }
 
 func (h *Handler) loadProjectDocument(w http.ResponseWriter, r *http.Request) (db.ProjectDocument, bool) {

@@ -1,3 +1,5 @@
+import { DocumentCollectionSchema, DocumentSourcesSchema, parseAssociationResponse, type AssociateDocumentInput, type DocumentListInput, type DocumentCollection, type DocumentSources } from "../documents/associations";
+import * as pipelines from "../pipelines/schema";
 import type { ZodType } from "zod";
 import { DirectoryBrowseRequestSchema, MALFORMED_DIRECTORY_REQUEST, type DirectoryBrowseInput, type DirectoryBrowseRequest } from "../runtimes/directories-schema";
 import { DocumentListSchema, DocumentHistorySchema, ProjectResourceListSchema, parseDocumentResponse, type ProjectDocument, type CreateDocumentInput, type SaveDocumentInput } from "../documents/schema";
@@ -4141,6 +4143,40 @@ export class ApiClient {
     return parseWithFallback(raw, DocumentListSchema, { documents: [] as ProjectDocument[], total: 0 }, { endpoint: "GET project documents" });
   }
 
+  async listProjectDocumentGroups(projectId: string, filters: DocumentListInput = {}) {
+    const query = new URLSearchParams();
+    if (filters.issue_id) query.set("issue_id", filters.issue_id);
+    if (filters.q) query.set("q", filters.q);
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/documents?${query}`);
+    return parseWithFallback<DocumentCollection>(raw, DocumentCollectionSchema,
+      { documents: [], total: 0, groups: [], references: [] }, { endpoint: "GET project document groups" });
+  }
+
+  async listIssueDocuments(issueId: string) {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/documents`);
+    return parseWithFallback<DocumentCollection>(raw, DocumentCollectionSchema,
+      { documents: [], total: 0, groups: [], references: [] }, { endpoint: "GET issue documents" });
+  }
+
+  async associateIssueDocument(issueId: string, input: AssociateDocumentInput) {
+    return parseAssociationResponse(await this.fetch<unknown>(`/api/issues/${issueId}/documents`, {
+      method: "POST", body: JSON.stringify(input),
+    }));
+  }
+
+  async unlinkIssueDocument(issueId: string, documentId: string): Promise<void> {
+    await this.fetch(`/api/issues/${issueId}/documents/${documentId}`, { method: "DELETE" });
+  }
+
+  async listProjectDocumentSources(projectId: string, id: string) {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/documents/${id}/sources`);
+    return parseWithFallback<DocumentSources>(raw, DocumentSourcesSchema, { sources: [], total: 0 }, { endpoint: "GET document sources" });
+  }
+
+  async getProjectDocumentRevision(projectId: string, id: string, version: number) {
+    return parseDocumentResponse(await this.fetch<unknown>(`/api/projects/${projectId}/documents/${id}/revisions/${version}`), "GET document revision");
+  }
+
   async getProjectDocument(projectId: string, id: string) {
     return parseDocumentResponse(await this.fetch<unknown>(`/api/projects/${projectId}/documents/${id}`), "GET project document");
   }
@@ -4745,6 +4781,59 @@ export class ApiClient {
     });
   }
 
+  private pipelineSearch(input: pipelines.PipelineListInput): string {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(input)) if (value !== undefined) params.set(key, String(value));
+    return params.toString();
+  }
+  async getPipelineCapabilities(): Promise<pipelines.PipelineCapabilities> {
+    const endpoint = "/api/pipelines/capabilities";
+    return parseWithFallback(await this.fetch<unknown>(endpoint), pipelines.PipelineCapabilitiesSchema, pipelines.EMPTY_PIPELINE_CAPABILITIES, { endpoint });
+  }
+  async validatePipeline(input: pipelines.PipelineSourceInput): Promise<pipelines.PipelineValidation> {
+    const endpoint = "/api/pipelines/validate";
+    return parseWithFallback(await this.fetch<unknown>(endpoint, {method: "POST", body: JSON.stringify(input)}), pipelines.PipelineValidationSchema, pipelines.EMPTY_PIPELINE_VALIDATION, { endpoint });
+  }
+  async createPipelineDefinition(input: pipelines.PipelineDefinitionInput): Promise<pipelines.PipelineDefinition | null> {
+    const endpoint = "/api/pipelines/definitions";
+    return parseWithFallback<pipelines.PipelineDefinition | null>(await this.fetch<unknown>(endpoint, {method: "POST", body: JSON.stringify(input)}), pipelines.PipelineDefinitionSchema, null, { endpoint });
+  }
+  async getPipelineDefinition(id: string): Promise<pipelines.PipelineDefinition | null> {
+    const endpoint = `/api/pipelines/definitions/${encodeURIComponent(id)}`;
+    return parseWithFallback<pipelines.PipelineDefinition | null>(await this.fetch<unknown>(endpoint), pipelines.PipelineDefinitionSchema, null, { endpoint });
+  }
+  async listPipelineDefinitions(input: pipelines.PipelineListInput) {
+    const endpoint = `/api/pipelines/definitions?${this.pipelineSearch(input)}`;
+    return parseWithFallback<{items: pipelines.PipelineDefinition[]; limit: number; offset: number}>(await this.fetch<unknown>(endpoint), pipelines.PipelineDefinitionListSchema, {items: [], limit: 50, offset: 0}, { endpoint });
+  }
+  async createPipelineRun(input: pipelines.PipelineRunInput): Promise<pipelines.PipelineRun | null> {
+    const endpoint = "/api/pipeline-runs";
+    return parseWithFallback<pipelines.PipelineRun | null>(await this.fetch<unknown>(endpoint, {method: "POST", body: JSON.stringify(input)}), pipelines.PipelineRunSchema, null, { endpoint });
+  }
+  async getPipelineRun(id: string): Promise<pipelines.PipelineRun | null> {
+    const endpoint = `/api/pipeline-runs/${encodeURIComponent(id)}`;
+    return parseWithFallback<pipelines.PipelineRun | null>(await this.fetch<unknown>(endpoint), pipelines.PipelineRunSchema, null, { endpoint });
+  }
+  async listPipelineRuns(input: pipelines.PipelineListInput = {}) {
+    const endpoint = `/api/pipeline-runs?${this.pipelineSearch(input)}`;
+    return parseWithFallback<{items: pipelines.PipelineRun[]; limit: number; offset: number}>(await this.fetch<unknown>(endpoint), pipelines.PipelineRunListSchema, {items: [], limit: 50, offset: 0}, { endpoint });
+  }
+  async getPipelineJob(id: string, job: string): Promise<pipelines.PipelineJob | null> {
+    const endpoint = `/api/pipeline-runs/${encodeURIComponent(id)}/jobs/${encodeURIComponent(job)}`;
+    return parseWithFallback<pipelines.PipelineJob | null>(await this.fetch<unknown>(endpoint), pipelines.PipelineJobSchema, null, { endpoint });
+  }
+  private async mutatePipelineRun(endpoint: string, input: object): Promise<pipelines.PipelineRun | null> {
+    return parseWithFallback<pipelines.PipelineRun | null>(await this.fetch<unknown>(endpoint, {method: "POST", body: JSON.stringify(input)}), pipelines.PipelineRunSchema, null, { endpoint });
+  }
+  async retryPipelineJob(id: string, job: string, input: pipelines.PipelineRevisionInput) { return this.mutatePipelineRun(`/api/pipeline-runs/${encodeURIComponent(id)}/jobs/${encodeURIComponent(job)}/retry`, input); }
+  async decidePipelineJob(id: string, job: string, input: pipelines.PipelineDecisionInput) { return this.mutatePipelineRun(`/api/pipeline-runs/${encodeURIComponent(id)}/jobs/${encodeURIComponent(job)}/decisions`, input); }
+  async reportPipelineJob(id: string, job: string, input: pipelines.PipelineReportInput) { return this.mutatePipelineRun(`/api/pipeline-runs/${encodeURIComponent(id)}/jobs/${encodeURIComponent(job)}/report`, input); }
+  async cancelPipelineRun(id: string, input: {reason: string; idempotency_key: string}) { return this.mutatePipelineRun(`/api/pipeline-runs/${encodeURIComponent(id)}/cancel`, input); }
+  async listPipelineArtifacts(id: string, input: pipelines.PipelineListInput = {}) {
+    const endpoint = `/api/pipeline-runs/${encodeURIComponent(id)}/artifacts?${this.pipelineSearch(input)}`;
+    return parseWithFallback<{items: pipelines.PipelineArtifact[]; limit: number; offset: number}>(await this.fetch<unknown>(endpoint), pipelines.PipelineArtifactListSchema, {items: [], limit: 50, offset: 0}, { endpoint });
+  }
+
   // Squads
   async listSquads(): Promise<Squad[]> {
     const raw = await this.fetch<unknown>(`/api/squads`);
@@ -4767,7 +4856,7 @@ export class ApiClient {
     }) as Squad;
   }
 
-  async updateSquad(id: string, data: { name?: string; description?: string; instructions?: string; leader_id?: string; avatar_url?: string }): Promise<Squad> {
+  async updateSquad(id: string, data: { name?: string; description?: string; instructions?: string; leader_id?: string; avatar_url?: string; instructions_mode?: "markdown" | "pipeline"; pipeline_definition_id?: string; expected_revision?: number }): Promise<Squad> {
     const raw = await this.fetch<unknown>(`/api/squads/${id}`, { method: "PUT", body: JSON.stringify(data) });
     return parseWithFallback(raw, SquadSchema, EMPTY_SQUAD, {
       endpoint: "PUT /api/squads/:id",
