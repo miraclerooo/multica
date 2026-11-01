@@ -2,7 +2,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { ApiClient } from "../api/client";
 import { IssueSchema } from "../api/schemas";
-import { IssueExecutionSchema, canStartIssueExecution, PIPELINE_SELECTION_CAPABILITY } from "./execution";
+import { IssueExecutionSchema, canStartIssueExecution, PIPELINE_SELECTION_CAPABILITY, selectionFromPreview, safeUpgradeGuide } from "./execution";
 import { PipelineCatalogSchema } from "./schema";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -18,6 +18,25 @@ const issue = {
 };
 const capabilities = {schema_version: 1, compiler_version: "v1", kinds: ["gitlab_yaml", "hermes_yaml"], features: {task_execution_selection: true}};
 const response = (value: unknown, status = 200) => new Response(JSON.stringify(value), {status, headers: {"Content-Type": "application/json"}});
+
+it("pins the explicit previewed definition and keeps default/guidance selectors free of stale IDs", () => {
+  const preview = IssueExecutionSchema.parse(snapshot);
+  expect(selectionFromPreview({mode: "pipeline", pipeline_id: "p"}, preview)).toEqual({mode: "pipeline", pipeline_id: "p", definition_id: "d1"});
+  expect(selectionFromPreview({mode: "default"}, {...preview, requested_mode: "default"})).toEqual({mode: "default"});
+  expect(selectionFromPreview({mode: "markdown"}, {...preview, requested_mode: "markdown", mode: "markdown"})).toEqual({mode: "markdown"});
+});
+it.each([
+  {pipeline_id: "foreign"}, {definition_id: ""}, {mode: "future_mode"}, {state: "future_hold"}, {requested_mode: "default"},
+])("does not submit an incompatible or foreign preview %j", change => {
+  expect(selectionFromPreview({mode: "pipeline", pipeline_id: "p"}, IssueExecutionSchema.parse({...snapshot, ...change}))).toBeNull();
+});
+it("refuses a different version than the explicit choice", () => {
+  expect(selectionFromPreview({mode: "pipeline", pipeline_id: "p", definition_id: "d2"}, IssueExecutionSchema.parse(snapshot))).toBeNull();
+});
+it.each(["http://example.com/guide", "https://user:secret@example.com/guide", "https://example.com/?token=sample", "https://example.com/#secret", "javascript:alert(1)", "invalid"])("refuses unsafe upgrade destinations %s", value => {
+  expect(safeUpgradeGuide(value)).toBeNull();
+});
+it("accepts a public HTTPS deployment guide without tokens", () => expect(safeUpgradeGuide("https://example.com/deployment")).toBe("https://example.com/deployment"));
 
 it("does not infer support or disk identity from a daemon version", () => {
   const parsed = IssueExecutionSchema.parse(snapshot);
@@ -61,6 +80,16 @@ it("leaves omitted execution compatible with older servers", async () => {
   const fetch = vi.fn().mockResolvedValue(response(issue, 201));vi.stubGlobal("fetch", fetch);
   expect((await new ApiClient("https://api.example.test").createIssue({title: "Draft"})).id).toBe("i");
   expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it("applies the same acknowledgement guard to manual comment-source creation", async () => {
+  const fetch = vi.fn().mockImplementation((url: string) => Promise.resolve(response(url.endsWith("/capabilities") ? capabilities : issue)));
+  vi.stubGlobal("fetch",fetch);
+  await expect(new ApiClient("https://api.example.test").createCommentSubIssue("comment", {
+    mode:"manual",capture_token:"capture",issue:{title:"Draft",execution:{mode:"pipeline",pipeline_id:"p",definition_id:"d1"},idempotency_key:"same"},
+  })).rejects.toMatchObject({body:{code:"execution_snapshot_missing",issue_id:"i"}});
+  expect(fetch.mock.calls.filter(([,init])=>init?.method==="POST")).toHaveLength(1);
+  expect(fetch.mock.calls[1]![0]).toContain("/api/comments/comment/sub-issues");
 });
 
 it("parses the catalog and readiness APIs without enabling malformed mutations", async () => {

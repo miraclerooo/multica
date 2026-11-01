@@ -214,7 +214,7 @@ export default function IssueDetail() {
         </View>
       ) : (
         <View className="flex-1">
-          <IssuePipelineCard issueId={issue.id} />
+          <IssuePipelineCard issueId={issue.id} execution={issue.execution} />
           <TimelineList
             issue={issue}
             entries={timeline.data}

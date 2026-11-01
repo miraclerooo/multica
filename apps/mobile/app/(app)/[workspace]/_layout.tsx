@@ -264,6 +264,12 @@ export default function WorkspaceLayout() {
             new-issue.tsx Stack.Screen (which is itself a `modal`).
             Expo Router 55 / RN Screens 4 support a formSheet pushed on top
             of a modal in the same Stack. */}
+        <Stack.Screen name="new-issue-picker/execution" options={SHEET_OPTIONS} />
+        <Stack.Screen name="pipeline/catalog" options={{title: t("issues:execution.catalog")}} />
+        <Stack.Screen name="pipeline/select-squad" options={SHEET_OPTIONS} />
+        <Stack.Screen name="pipeline/select-pipeline" options={SHEET_OPTIONS} />
+        <Stack.Screen name="pipeline/select-version" options={SHEET_OPTIONS} />
+        <Stack.Screen name="pipeline/select-default" options={SHEET_OPTIONS} />
         <Stack.Screen
           name="new-issue-picker/status"
           options={SHEET_OPTIONS}

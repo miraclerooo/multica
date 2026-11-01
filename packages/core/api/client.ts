@@ -1439,6 +1439,14 @@ export class ApiClient {
     return issue;
   }
 
+  private assertIssueExecutionSelection(issue: Issue, selection?: ExecutionSelection) {
+    if (selection && (!issue.execution || issue.execution.requested_mode !== selection.mode ||
+        (selection.mode === "pipeline" && (issue.execution.pipeline_id?.toLowerCase() !== selection.pipeline_id.toLowerCase() ||
+          (selection.definition_id && issue.execution.definition_id?.toLowerCase() !== selection.definition_id.toLowerCase()))))) {
+      throw new ApiError("Server did not acknowledge the requested execution selection", 502, "Bad Gateway", {code: "execution_snapshot_missing", issue_id: issue.id});
+    }
+  }
+
   async createIssue(
     data: CreateIssueRequest,
     workspaceSlug?: string,
@@ -1478,11 +1486,7 @@ export class ApiClient {
     if (!issue) {
       throw new Error();
     }
-    if (data.execution && (!issue.execution || issue.execution.requested_mode !== data.execution.mode ||
-        (data.execution.mode === "pipeline" && (issue.execution.pipeline_id?.toLowerCase() !== data.execution.pipeline_id.toLowerCase() ||
-          (data.execution.definition_id && issue.execution.definition_id?.toLowerCase() !== data.execution.definition_id.toLowerCase()))))) {
-      throw new ApiError("Server did not acknowledge the requested execution selection", 502, "Bad Gateway", {code: "execution_snapshot_missing", issue_id: issue.id});
-    }
+    this.assertIssueExecutionSelection(issue, data.execution);
     assertIssueCreatePropertiesSnapshot(requestedProperties, issue);
     return issue;
   }
@@ -1527,6 +1531,11 @@ export class ApiClient {
     anchorCommentId: string,
     data: CreateCommentSubIssueRequest,
   ): Promise<Issue | { task_id: string }> {
+    if (data.mode === "manual" && data.issue.execution) {
+      const caps = await this.getPipelineCapabilities();
+      if (caps.features.task_execution_selection !== true) throw new ApiError("Server does not support atomic task execution selection", 422, "Unprocessable Entity", {code: "unsupported_capability"});
+    }
+
     try {
       const requestedProperties =
         data.mode === "manual" ? requestedIssueCreateProperties(data.issue) : undefined;
@@ -1547,6 +1556,7 @@ export class ApiClient {
           endpoint: "POST /api/comments/:id/sub-issues (manual)",
         });
         if (!issue) throw new Error("Invalid sub-issue response");
+        this.assertIssueExecutionSelection(issue, data.issue.execution);
         assertIssueCreatePropertiesSnapshot(requestedProperties, issue);
         return issue;
       }
@@ -4912,7 +4922,7 @@ export class ApiClient {
     }) as Squad;
   }
 
-  async updateSquad(id: string, data: { name?: string; description?: string; instructions?: string; leader_id?: string; avatar_url?: string; instructions_mode?: "markdown" | "pipeline"; pipeline_definition_id?: string; expected_revision?: number }): Promise<Squad> {
+  async updateSquad(id: string, data: { name?: string; description?: string; instructions?: string; leader_id?: string; avatar_url?: string; instructions_mode?: "markdown" | "pipeline"; pipeline_id?: string; pipeline_definition_id?: string; expected_revision?: number }): Promise<Squad> {
     const raw = await this.fetch<unknown>(`/api/squads/${id}`, { method: "PUT", body: JSON.stringify(data) });
     return parseWithFallback(raw, SquadSchema, EMPTY_SQUAD, {
       endpoint: "PUT /api/squads/:id",

@@ -10,6 +10,8 @@ import {
 } from "@multica/core/workspace/queries";
 import {
   bindPipelineRole,
+  adoptLegacyPipelineDraft,
+  movePipelineDraftScope,
   clearPipelineDraft,
   extractPipelineDraft,
   pipelineCapabilitiesOptions,
@@ -21,6 +23,9 @@ import {
   usePipelineWorkbenchStore,
   editPipelineWorkbench,
   useCreatePipelineDefinition,
+  useCreatePipelineCatalog,
+  type PipelineCatalog,
+  type PipelineCatalogCreateResult,
   usePipelineDraftStore,
   type PipelineValidation,
 } from "@multica/core/pipelines";
@@ -50,7 +55,12 @@ export function SquadPipeline({
   canManage,
   getName,
   onDirtyChange,
+  catalog, newName = "", onCreated, externalBusy = false,
 }: {
+  externalBusy?: boolean;
+  catalog?: PipelineCatalog;
+  newName?: string;
+  onCreated?: (result: PipelineCatalogCreateResult) => void;
   squad: Squad;
   members: SquadMember[];
   canManage: boolean;
@@ -63,11 +73,21 @@ export function SquadPipeline({
   const caps = useQuery(pipelineCapabilitiesOptions(wsId));
   const [offset, setOffset] = useState(0);
   const versions = useQuery(
-    pipelineDefinitionsOptions(wsId, { squad_id: squad.id, limit: 50, offset }),
+    {...pipelineDefinitionsOptions(wsId, { squad_id: squad.id, pipeline_id: catalog?.id, limit: 50, offset }), enabled: !!catalog},
   );
-  const [openedId, setOpenedId] = useState(squad.pipeline_definition_id ?? "");
+  const key = `${wsId}:${squad.id}:${catalog?.id ?? "new"}`;
+  const [openedId, setOpenedId] = useState(usePipelineDraftStore.getState().draft.drafts[key]?.baseId || catalog?.executable_definition_id || "");
   const current = useQuery(pipelineDefinitionOptions(wsId, openedId));
-  const key = `${wsId}:${squad.id}`;
+  useEffect(() => {
+    const from = `${wsId}:${squad.id}`;
+    const drafts = usePipelineDraftStore.getState().draft.drafts;
+    if(catalog?.legacy) {
+      const base = !drafts[key] ? drafts[from]?.baseId : undefined;
+      adoptLegacyPipelineDraft(from, key);
+      if(base) setOpenedId(base);
+    }
+  }, [wsId, squad.id, key, catalog?.legacy]);
+  useEffect(() => {if (catalog && !openedId && versions.data?.items[0]) setOpenedId(versions.data.items[0].id);}, [catalog, openedId, versions.data]);
   const draft = usePipelineDraftStore((s) => s.draft.drafts[key]);
   const source = draft?.source ?? current.data?.source ?? "";
   const kind = pipelineSourceKind(source);
@@ -85,8 +105,9 @@ export function SquadPipeline({
   const input = useRef<HTMLTextAreaElement>(null);
   const operation = useRef({ body: "", key: "" });
   const create = useCreatePipelineDefinition(wsId);
+  const createCatalog = useCreatePipelineCatalog(wsId);
   const edit = (value: string) => {
-    putPipelineDraft(key, value, openedId, squad.revision);
+    putPipelineDraft(key, value, openedId, squad.revision, {catalogRevision: catalog?.revision});
     setSaved("");
     setError("");
   };
@@ -134,14 +155,16 @@ export function SquadPipeline({
         err instanceof Error ? err.message : t(($) => $.pipeline.failed),
       ),
   });
-  const busy = create.isPending || binding.isPending;
+  const sourceReady = !catalog || !!draft || !!current.data;
+  const busy = !sourceReady || externalBusy || create.isPending || createCatalog.isPending || binding.isPending;
   const save = async (activate: boolean) => {
-    if (!canManage || !valid || busy) return;
+    if (!canManage || !valid || busy || (!catalog && !newName.trim())) return;
     setError("");
     const body = {
       source,
       squad_id: squad.id,
       activate,
+      ...(catalog ? {pipeline_id: catalog.id, expected_pipeline_revision: draft?.catalogRevision ?? catalog.revision} : {name: newName.trim()}),
       ...(activate
         ? { expected_revision: draft?.baseRevision ?? squad.revision }
         : {}),
@@ -155,10 +178,9 @@ export function SquadPipeline({
           : crypto.randomUUID(),
       };
     try {
-      const doc = await create.mutateAsync({
-        ...body,
-        idempotency_key: operation.current.key,
-      });
+      const input = {...body, idempotency_key: operation.current.key};
+      const result = !catalog ? await createCatalog.mutateAsync({...input, name: newName.trim()}) : null;
+      const doc = result?.definition ?? await create.mutateAsync(input);
       if (!doc) throw new Error(t(($) => $.pipeline.failed));
       operation.current = { body: "", key: "" };
       setOpenedId(doc.id);
@@ -166,6 +188,7 @@ export function SquadPipeline({
       if (usePipelineDraftStore.getState().draft.drafts[key]?.source === source)
         clearPipelineDraft(key);
       void versions.refetch();
+      if (result) {movePipelineDraftScope(key, `${wsId}:${squad.id}:${result.pipeline.id}`); onCreated?.(result);}
     } catch (err) {
       setError(
         err instanceof Error ? err.message : t(($) => $.pipeline.failed),
@@ -184,7 +207,7 @@ export function SquadPipeline({
   };
   return (
     <section
-      className="pipeline-panel p-4 space-y-4"
+      className="pipeline-panel space-y-4"
       data-testid="squad-pipeline"
     >
       <div className="pipeline-toolbar justify-between">
@@ -204,40 +227,12 @@ export function SquadPipeline({
             {t(($) => $.pipeline.runs)}
           </Button>
         </div>
-        <label className="pipeline-metadata flex items-center gap-2">
-          {t(($) => $.pipeline.mode)}
-          <select
-            className="pipeline-select"
-            value={squad.instructions_mode ?? "markdown"}
-            disabled={!canManage || busy}
-            onChange={(e) => {
-              if (e.target.value === "markdown") {
-                if (window.confirm(t(($) => $.pipeline.definition_note)))
-                  binding.mutate({ instructions_mode: "markdown" });
-              } else if (openedId)
-                binding.mutate({
-                  instructions_mode: "pipeline",
-                  pipeline_definition_id: openedId,
-                });
-            }}
-          >
-            <option value="markdown">{t(($) => $.pipeline.markdown)}</option>
-            <option value="pipeline" disabled={!openedId}>
-              {t(($) => $.pipeline.title)}
-            </option>
-            {!["markdown", "pipeline"].includes(
-              squad.instructions_mode ?? "markdown",
-            ) && (
-              <option value={squad.instructions_mode}>
-                {squad.instructions_mode}
-              </option>
-            )}
-          </select>
-        </label>
+
       </div>
       {!canManage && (
         <p className="pipeline-metadata">{t(($) => $.pipeline.readonly)}</p>
       )}
+      {!sourceReady && <p role="status" className="text-caption">{current.isFetching || versions.isFetching ? t(($) => $.pipeline.loading) : t(($) => $.pipeline.failed)}</p>}
       {tab === "runs" ? (
         <PipelineHistory squadId={squad.id} />
       ) : (
@@ -458,7 +453,7 @@ export function SquadPipeline({
               <Button
                 variant="outline"
                 size="sm"
-                disabled={!valid || busy}
+                disabled={!valid || busy || (!catalog && !newName.trim())}
                 onClick={() => void save(false)}
               >
                 {t(($) => $.pipeline.save)}
@@ -467,6 +462,7 @@ export function SquadPipeline({
                 size="sm"
                 disabled={
                   !valid ||
+                  (!catalog && !newName.trim()) ||
                   validationSource?.binding_valid !== true ||
                   busy ||
                   !squad.revision
@@ -628,6 +624,7 @@ export function SquadPipeline({
           </DialogHeader>
           <LatestSource
             squadId={squad.id}
+            pipelineId={catalog?.id}
             local={source}
             other={comparisonSource}
           />
@@ -640,7 +637,7 @@ export function SquadPipeline({
                   staleTime: 0,
                 });
                 if (comparisonSource === undefined && latestSquad.revision)
-                  reviewPipelineDraft(key, latestSquad.revision);
+                  reviewPipelineDraft(key, latestSquad.revision, catalog ? (await api.getPipelineCatalog(catalog.id))?.revision : undefined);
                 setComparison(false);
               }}
             >
@@ -665,6 +662,7 @@ export function SquadPipeline({
             </DialogDescription>
           </DialogHeader>
           <MikaWorkbench
+            scope={key}
             squad={squad}
             members={members}
             source={source}
@@ -681,17 +679,19 @@ export function SquadPipeline({
 
 function LatestSource({
   squadId,
+  pipelineId,
   local,
   other,
 }: {
   squadId: string;
+  pipelineId?: string;
   local: string;
   other?: string;
 }) {
   const wsId = useWorkspaceId();
   const { t } = useT("squads");
   const latest = useQuery(
-    pipelineDefinitionsOptions(wsId, { squad_id: squadId, limit: 1 }),
+    {...pipelineDefinitionsOptions(wsId, { squad_id: squadId, pipeline_id: pipelineId, limit: 1 }), enabled: !!pipelineId},
   );
   return (
     <div className="grid sm:grid-cols-2 gap-3 overflow-auto max-h-[60vh] text-caption">
@@ -708,11 +708,13 @@ function LatestSource({
 }
 
 function MikaWorkbench({
+  scope,
   squad,
   members,
   source,
   onApply,
 }: {
+  scope: string;
   squad: Squad;
   members: SquadMember[];
   source: string;
@@ -725,7 +727,7 @@ function MikaWorkbench({
     (a) => a.system_key === "mika" && !a.archived_at,
   );
   const qc = useQueryClient();
-  const workbenchKey = `${wsId}:${squad.id}`;
+  const workbenchKey = scope;
   const local = usePipelineWorkbenchStore((s) => s.draft.entries[workbenchKey]);
   const request = local?.request ?? "";
   const session = local?.sessionId ?? "";

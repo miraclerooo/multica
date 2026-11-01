@@ -14,6 +14,7 @@ import type { User } from "@multica/core/types";
 import { api, ApiError } from "./api";
 import { clearToken, getToken, setToken } from "./secure-storage";
 import { invalidateSessionEpoch } from "./session-epoch";
+import { usePipelineEditorStore } from "./stores/pipeline-editor-store";
 import { useWorkspaceStore } from "./workspace-store";
 
 interface AuthState {
@@ -79,6 +80,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
+    usePipelineEditorStore.getState().reset();
     // First statement in the function, before any await. The Keychain delete
     // below is async, so until it lands a concurrent read still returns the
     // token being removed — the epoch is what makes this instant.

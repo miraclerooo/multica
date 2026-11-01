@@ -113,7 +113,11 @@ An issue's Pipeline card opens its run history, node attempts, logs and publishe
 
 Project documents are grouped by source issue. Link a published deliverable to an existing or new Markdown document to insert its link and preserve its source. Repeating the operation does not duplicate the link. Unlinking an issue keeps the Markdown body, source files and history. Concurrent edits retain your draft for comparison.
 
-Web and Desktop share the editor. Mobile provides run and material viewing, approval and grouped Markdown reading; edit YAML on Web or Desktop.
+Each squad can keep several named pipelines with independent version histories. Choose a pipeline to edit or rename it; saving a version leaves the squad default unchanged. Set that default separately, or choose **Save and enable** explicitly.
+
+When creating a squad issue, choose its default, guidance, or a specific pipeline. The preview shows the exact version and the relevant runtime readiness. A waiting issue keeps that version even if a newer one is published. Recheck readiness and start its saved execution from the created issue; do not create another issue to continue. Daemon and installed CLI identities are shown separately. Follow the offered update or deployment guide yourself, then recheck.
+
+Web and Desktop share the editor. Mobile's **More → Pipelines** entry supports named pipelines, YAML editing, versions and defaults. Its New Issue screen has execution selection and continuation. Flow graph editing and Mika authoring remain on Web/Desktop.
 
 ## Using the CLI
 

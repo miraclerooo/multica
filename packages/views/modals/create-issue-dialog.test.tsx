@@ -28,14 +28,14 @@ vi.mock("@multica/core/issues/queries", () => ({
   }),
 }));
 
-vi.mock("@multica/core/issues/stores/draft-store", () => ({
-  useIssueDraftStore: {
-    getState: () => ({
-      beginIsolatedDraft: mockBeginIsolatedDraft,
-      endIsolatedDraft: mockEndIsolatedDraft,
-    }),
-  },
-}));
+vi.mock("@multica/core/issues/stores/draft-store", () => {
+  const state = {
+    draft: {manual: {assigneeType: undefined, assigneeId: undefined}},
+    beginIsolatedDraft: mockBeginIsolatedDraft,
+    endIsolatedDraft: mockEndIsolatedDraft,
+  };
+  return {useIssueDraftStore: Object.assign((selector: (s: typeof state) => unknown) => selector(state), {getState: () => state})};
+});
 
 const mockCreateModeStore = {
   lastMode: "agent" as "agent" | "manual",

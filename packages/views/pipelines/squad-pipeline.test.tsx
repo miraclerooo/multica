@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -93,6 +94,7 @@ function mount(canManage: boolean) {
   render(
     <QueryClientProvider client={client}>
       <SquadPipeline
+        catalog={{id: "p", workspace_id: "ws", squad_id: "s", name: "Custom", revision: 1, executable_definition_id: null, legacy: false, created_at: "", updated_at: ""}}
         squad={squad}
         members={[]}
         canManage={canManage}
@@ -104,6 +106,7 @@ function mount(canManage: boolean) {
   return client;
 }
 afterEach(() => {
+  cleanup();
   usePipelineDraftStore.getState().clearDraft();
   usePipelineWorkbenchStore.getState().clearDraft();
   calls.active = false;
@@ -111,7 +114,7 @@ afterEach(() => {
   calls.events = {};
   vi.clearAllMocks();
 });
-it("allows a viewer to read the original draft while refusing edits, mode changes and keyboard saves", async () => {
+it("allows a viewer to read the original draft while refusing edits and keyboard saves", async () => {
   calls.validate.mockResolvedValue({
     kind: "gitlab_yaml",
     syntax_valid: true,
@@ -125,14 +128,12 @@ it("allows a viewer to read the original draft while refusing edits, mode change
       nodes: [],
     },
   });
-  putPipelineDraft("ws:s", source, "", 1);
+  putPipelineDraft("ws:s:p", source, "", 1);
   const client = mount(false);
   const editor = screen.getByRole("textbox", { name: "YAML" });
   expect(editor).toHaveValue(source);
   expect(editor).toHaveAttribute("readonly");
-  expect(
-    screen.getByRole("combobox", { name: "Execution mode" }),
-  ).toBeDisabled();
+  expect(screen.queryByRole("combobox", { name: "Execution mode" })).not.toBeInTheDocument();
   expect(
     screen.queryByRole("button", { name: "Save and enable" }),
   ).not.toBeInTheDocument();
@@ -142,7 +143,7 @@ it("allows a viewer to read the original draft while refusing edits, mode change
   client.clear();
 });
 it("keeps an unknown dialect readable and disables actions until the user supplies a supported definition", async () => {
-  putPipelineDraft("ws:s", "kind: future_yaml\ncustom: untouched\n", "", 1);
+  putPipelineDraft("ws:s:p", "kind: future_yaml\ncustom: untouched\n", "", 1);
   const client = mount(true);
   await waitFor(() =>
     expect(screen.getByRole("combobox", { name: "Dialect" })).toHaveValue(
@@ -179,7 +180,7 @@ it("keeps Mika's session and unsent request when closing, and consumes the real 
     calls.active = true;
     return {};
   });
-  putPipelineDraft("ws:s", source, "", 1);
+  putPipelineDraft("ws:s:p", source, "", 1);
   const client = mount(true);
   fireEvent.click(screen.getByRole("button", { name: "Mika workbench" }));
   fireEvent.change(screen.getByLabelText("Requirements for Mika"), {

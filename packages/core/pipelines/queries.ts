@@ -20,6 +20,18 @@ export const pipelineKeys = {
 };
 export const pipelineCapabilitiesOptions = (wsId: string) => queryOptions({ queryKey: pipelineKeys.capabilities(wsId), queryFn: () => api.getPipelineCapabilities() });
 export const pipelineCatalogOptions = (wsId: string, input: PipelineListInput) => queryOptions({queryKey: pipelineKeys.catalog(wsId, input), queryFn: () => api.listPipelineCatalog(input)});
+export const pipelineCatalogAllOptions = (wsId: string, squadId: string) => queryOptions({
+  queryKey: [...pipelineKeys.catalog(wsId, {squad_id: squadId}), "all"],
+  queryFn: async () => {
+    const items: import("./schema").PipelineCatalog[] = [];
+    for (let offset = 0; ; ) {
+      const page = await api.listPipelineCatalog({squad_id: squadId, limit: 100, offset});
+      items.push(...page.items);
+      if (!page.items.length || page.limit <= 0 || page.items.length < page.limit) return items;
+      offset += page.items.length;
+    }
+  }, enabled: !!squadId,
+});
 export const pipelineCatalogItemOptions = (wsId: string, id: string) => queryOptions({queryKey: pipelineKeys.catalogItem(wsId, id), queryFn: () => api.getPipelineCatalog(id), enabled: !!id});
 export const issueExecutionOptions = (wsId: string, issueId: string) => queryOptions({queryKey: pipelineKeys.execution(wsId, issueId), queryFn: () => api.getIssueExecution(issueId), enabled: !!issueId});
 export const pipelineDefinitionsOptions = (wsId: string, input: PipelineListInput) => queryOptions({ queryKey: pipelineKeys.definitions(wsId, input), queryFn: () => api.listPipelineDefinitions(input) });

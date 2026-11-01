@@ -81,6 +81,7 @@ test("preserves custom YAML across dialects, validates real plans and atomically
     });
     await page.getByRole("button", { name: "Pipeline", exact: true }).click();
     const editor = page.getByRole("textbox", { name: "YAML", exact: true });
+    await page.getByRole("textbox", {name:"Pipeline name"}).fill("Custom preserved workflow");
     await editor.fill(source);
     await expect(
       page.getByRole("button", { name: "Save and enable", exact: true }),
@@ -153,7 +154,12 @@ test("preserves custom YAML across dialects, validates real plans and atomically
     );
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByRole("button", { name: "Pipeline", exact: true }).click();
-    await expect(editor).toHaveValue(source);
+    // The catalog opens its latest version; saving it keeps the squad's pinned default.
+    await expect(editor).toHaveValue(hermes);
+    const unchangedDefault = await (
+      await f.api.request(`/api/squads/${f.squad.id}`)
+    ).json();
+    expect(unchangedDefault.pipeline_definition_id).toBe(saved.pipeline_definition_id);
   } finally {
     await f.cleanup();
   }
@@ -176,6 +182,7 @@ test("declares a selected Hermes squad role and keeps leader fallback valid", as
     await page.goto(`/${f.workspace.slug}/squads/${f.squad.id}`);
     await page.getByRole("button", { name: "Pipeline", exact: true }).click();
     const editor = page.getByRole("textbox", { name: "YAML", exact: true });
+    await page.getByRole("textbox", {name:"Pipeline name"}).fill("Custom preserved workflow");
     const original = `kind: hermes_yaml
 # Preserve the user's workflow.
 roles: {}

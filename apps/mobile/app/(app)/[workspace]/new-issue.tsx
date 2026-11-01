@@ -1,3 +1,9 @@
+import { newExecutionRequestKey } from "@multica/core/pipelines/execution";
+import { Text } from "@/components/ui/text";
+import { Button } from "@/components/ui/button";
+import { ApiError } from "@/data/api";
+import { useWorkspaceStore } from "@/data/workspace-store";
+import { useNewIssueExecution, NewIssueExecution, MobileIssueExecution } from "@/components/pipeline/execution";
 /**
  * New issue creation modal — manual only.
  *
@@ -14,7 +20,7 @@
  * — both surfaces produce canonical `[@name](mention://type/id)` markdown
  * recognised by util.ParseMentions on the server.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -57,16 +63,22 @@ export default function NewIssueModal() {
   }, [resetDraft]);
 
   const createIssue = useCreateIssue();
+  const execution = useNewIssueExecution();
+  const slug = useWorkspaceStore(s => s.currentWorkspaceSlug);
+  const [created, setCreated] = useState<{id: string; unconfirmed?: boolean; label?: string} | null>(null);
+  const inFlight = useRef(false);
+  const receipt = useRef({body: "", key: ""});
   const isSubmitting = createIssue.isPending;
 
-  const canSubmit = !isSubmitting && title.trim().length > 0;
+  const canSubmit = !isSubmitting && execution.canSubmit && !created && title.trim().length > 0;
 
   const onSubmit = useCallback(async () => {
     const trimmedTitle = title.trim();
-    if (trimmedTitle.length === 0) return;
+    if (trimmedTitle.length === 0 || !execution.canSubmit || created || inFlight.current) return;
+    inFlight.current = true;
     const finalDescription = description.serialize().trim();
     try {
-      await createIssue.mutateAsync({
+      const body = {
         title: trimmedTitle,
         description: finalDescription || undefined,
         status,
@@ -76,16 +88,24 @@ export default function NewIssueModal() {
           : {}),
         ...(dueDate ? { due_date: dueDate } : {}),
         ...(project ? { project_id: project.id } : {}),
-      });
-      router.back();
+        ...(execution.squadId && execution.frozen ? {execution: execution.frozen} : {}),
+      };
+      const fingerprint = JSON.stringify(body);
+      if (receipt.current.body !== fingerprint) receipt.current = {body: fingerprint, key: newExecutionRequestKey()};
+      const issue = await createIssue.mutateAsync({...body, ...(execution.squadId ? {idempotency_key: receipt.current.key} : {})});
+      if (execution.squadId) setCreated({id: issue.id, label: `${issue.identifier} · ${issue.title}`}); else router.back();
     } catch (err) {
+      if (err instanceof ApiError && err.body && typeof err.body === "object" && "issue_id" in err.body && typeof err.body.issue_id === "string") {
+        setCreated({id: err.body.issue_id, unconfirmed: true});
+        return;
+      }
       Alert.alert(
         t("errors.create_failed"),
         err instanceof Error ? err.message : t("common:states.error"),
       );
-    }
+    } finally { inFlight.current = false; }
   }, [
-    title,
+    execution, created, title,
     description,
     status,
     priority,
@@ -106,6 +126,16 @@ export default function NewIssueModal() {
     ),
     [canSubmit, isSubmitting, onSubmit],
   );
+
+  if (created) return <ScrollView className="flex-1 bg-background" contentContainerClassName="p-4 gap-4">
+    <Stack.Screen options={{title: t("execution.created"), headerRight: () => null}} />
+    <Text className="text-lg font-semibold">{t("execution.created")}</Text>
+    {created.label && <Text>{created.label}</Text>}
+    {created.unconfirmed && <Text>{t("execution.unconfirmed")}</Text>}
+    <MobileIssueExecution issueId={created.id} />
+    <Button variant="outline" onPress={() => {router.back();router.push(`/${slug}/issue/${created.id}`);}}><Text>{t("execution.view_issue")}</Text></Button>
+    <Button variant="ghost" onPress={() => router.back()}><Text>{t("execution.close")}</Text></Button>
+  </ScrollView>;
 
   return (
     <>
@@ -134,6 +164,7 @@ export default function NewIssueModal() {
             disabled={isSubmitting}
           />
           <CreateFormAttributeRow />
+          <NewIssueExecution value={execution} />
         </ScrollView>
 
         {/* Mention suggestions float above the keyboard only when the user

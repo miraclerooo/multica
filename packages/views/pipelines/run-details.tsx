@@ -49,6 +49,7 @@ import { BreadcrumbHeader } from "../layout/breadcrumb-header";
 import { AssociateDocument } from "../projects/documents/associate-document";
 import { FlowGraph } from "./flow-graph";
 import "./pipelines.css";
+import { IssueExecutionPanel } from "./execution-summary";
 
 export function IssuePipelineCard({ issue }: { issue: Issue }) {
   const { t } = useT("squads");
@@ -65,7 +66,7 @@ export function IssuePipelineCard({ issue }: { issue: Issue }) {
   const start = useCreatePipelineRun(wsId);
   const member = useCurrentMember(wsId);
   const operation = useRef(crypto.randomUUID());
-  if (!runs.data?.items.length && squad.data?.instructions_mode !== "pipeline")
+  if (!issue.execution && !runs.data?.items.length && squad.data?.instructions_mode !== "pipeline")
     return null;
   return (
     <section
@@ -73,6 +74,7 @@ export function IssuePipelineCard({ issue }: { issue: Issue }) {
       data-testid="issue-pipeline-card"
     >
       <h3>{t(($) => $.pipeline.title)}</h3>
+      {issue.execution && <IssueExecutionPanel issueId={issue.id} />}
       {runs.isError && (
         <p role="alert" className="pipeline-error">
           {t(($) => $.pipeline.failed)}
@@ -102,7 +104,7 @@ export function IssuePipelineCard({ issue }: { issue: Issue }) {
       {!runs.isLoading && !runs.isError && !runs.data?.items.length && (
         <p className="pipeline-metadata">{t(($) => $.pipeline.no_runs)}</p>
       )}
-      {squad.data?.instructions_mode === "pipeline" &&
+      {!issue.execution && squad.data?.instructions_mode === "pipeline" &&
         issue.assignee_id &&
         member.member &&
         !runs.data?.items.some((r) =>

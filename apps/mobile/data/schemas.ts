@@ -730,6 +730,7 @@ export const EMPTY_RUNTIME_LIST: RuntimeDevice[] = [];
 // safe to default. `.loose()` so the server can add squad fields without
 // breaking the parser.
 export const SquadSchema: z.ZodType<Squad> = z.object({
+  revision: z.number().optional(), instructions_mode: z.string().optional(), pipeline_definition_id: z.string().nullable().optional(),
   id: z.string(),
   workspace_id: z.string().default(""),
   name: z.string().default(""),

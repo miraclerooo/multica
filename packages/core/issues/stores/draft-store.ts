@@ -8,6 +8,7 @@ import type {
 } from "../../types";
 import type { CreateMode } from "./create-mode-store";
 import type { QuickCreateActorType } from "./quick-create-store";
+import type { ExecutionSelection } from "../../pipelines/execution";
 import { createWorkspaceAwareStorage, registerForWorkspaceRehydration } from "../../platform/workspace-storage";
 import { defaultStorage } from "../../platform/storage";
 import { registerDraftCleanup } from "../../drafts/cleanup-registry";
@@ -45,6 +46,8 @@ export interface IssueCreateShared {
 }
 
 export interface IssueCreateManual {
+  executionSelections?: Record<string, ExecutionSelection>;
+  executionReceipt?: { body: string; key: string };
   title: string;
   description: string;
   status: IssueStatus;
