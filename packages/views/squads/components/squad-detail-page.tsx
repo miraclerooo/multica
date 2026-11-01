@@ -1,5 +1,6 @@
 "use client";
 
+import { SquadPipeline } from "../../pipelines/squad-pipeline";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@multica/core/api";
@@ -794,6 +795,7 @@ function SquadDetailInspector({
               <span className="truncate">{leaderName}</span>
             </span>
           </InspectorRow>
+          <InspectorRow label={t(($) => $.pipeline.mode)}><span>{squad.instructions_mode === "pipeline" ? t(($) => $.pipeline.title) : squad.instructions_mode === "markdown" || !squad.instructions_mode ? t(($) => $.pipeline.markdown) : squad.instructions_mode}</span></InspectorRow>
           <InspectorRow label={t(($) => $.details.members)}>
             <span className="text-muted-foreground tabular-nums">{memberCount}</span>
           </InspectorRow>
@@ -932,11 +934,12 @@ function SquadDescriptionEditorBody({
 // SquadOverviewPane — right column with two tabs (Members | Instructions).
 // Mirrors AgentOverviewPane: dirty-guard via AlertDialog when switching tabs
 // with unsaved Instructions.
-type SquadDetailTab = "members" | "instructions";
+type SquadDetailTab = "members" | "instructions" | "pipeline";
 
 const squadDetailTabs: { id: SquadDetailTab; icon: typeof FileText }[] = [
   { id: "members", icon: Users },
   { id: "instructions", icon: FileText },
+  { id: "pipeline", icon: FileText },
 ];
 
 function SquadOverviewPane({
@@ -1016,6 +1019,7 @@ function SquadOverviewPane({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
+        {activeTab === "pipeline" && <SquadPipeline squad={squad} members={members} canManage={canManage} getName={getEntityName} onDirtyChange={setActiveDirty} />}
         {activeTab === "members" && (
           <div className="flex h-full flex-col p-4 md:p-6">
             <SquadMembersTab
@@ -1050,15 +1054,15 @@ function SquadOverviewPane({
         <AlertDialog open onOpenChange={(v) => { if (!v) setPendingTab(null); }}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{t(($) => $.discard_changes_dialog.title)}</AlertDialogTitle>
+              <AlertDialogTitle>{activeTab === "pipeline" ? t(($) => $.pipeline.dirty) : t(($) => $.discard_changes_dialog.title)}</AlertDialogTitle>
               <AlertDialogDescription>
-                {t(($) => $.discard_changes_dialog.description)}
+                {activeTab === "pipeline" ? t(($) => $.pipeline.kept) : t(($) => $.discard_changes_dialog.description)}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>{t(($) => $.discard_changes_dialog.keep_editing)}</AlertDialogCancel>
               <AlertDialogAction variant="destructive" onClick={commitTabChange}>
-                {t(($) => $.discard_changes_dialog.discard_button)}
+                {activeTab === "pipeline" ? t(($) => $.pipeline.keep_draft) : t(($) => $.discard_changes_dialog.discard_button)}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

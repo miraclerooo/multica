@@ -6,7 +6,7 @@
 
 import "./env";
 import pg from "pg";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 // `||` (not `??`) so an empty `NEXT_PUBLIC_API_URL=` in .env still falls
 // back to localhost. dotenv sets unset-vs-empty both as "" — treating them
@@ -80,6 +80,40 @@ export class TestApiClient {
       const token = `mat_${randomBytes(32).toString("hex")}`;
       await db.query(`INSERT INTO task_token (token_hash, task_id, agent_id, workspace_id, user_id, expires_at) VALUES ($1, $2, $3, $4, $5, now() + interval '1 hour')`, [createHash("sha256").update(token).digest("hex"), taskId, agentId, this.workspaceId, userId]);
       return { token, agentId, taskId, workspaceId: this.workspaceId };
+    } finally { await db.end(); }
+  }
+
+  /** Persist a completed fake executor snapshot; no installed agent CLI is invoked. */
+  async removePipelineSquadFixture(squadId: string) {
+    const db = new pg.Client(DATABASE_URL);
+    await db.connect();
+    try {
+      await db.query("DELETE FROM task_token WHERE task_id IN (SELECT id FROM agent_task_queue WHERE pipeline_run_id IN (SELECT id FROM pipeline_run WHERE squad_id=$1 AND workspace_id=$2))", [squadId, this.workspaceId]);
+      await db.query("DELETE FROM agent_task_queue WHERE pipeline_run_id IN (SELECT id FROM pipeline_run WHERE squad_id=$1 AND workspace_id=$2)", [squadId, this.workspaceId]);
+      await db.query("DELETE FROM pipeline_run WHERE squad_id=$1 AND workspace_id=$2", [squadId, this.workspaceId]);
+      await db.query("DELETE FROM pipeline_definition WHERE squad_id=$1 AND workspace_id=$2", [squadId, this.workspaceId]);
+      await db.query("DELETE FROM squad_member WHERE squad_id=$1", [squadId]);
+      await db.query("DELETE FROM squad WHERE id=$1 AND workspace_id=$2", [squadId, this.workspaceId]);
+    } finally { await db.end(); }
+  }
+
+  async seedPipelineDocumentMaterial(runId: string, documentId: string, documentVersion: number, failed = false) {
+    const db = new pg.Client(DATABASE_URL);
+    await db.connect();
+    try {
+      const row = await db.query("SELECT state FROM pipeline_run WHERE id=$1 AND workspace_id=$2", [runId, this.workspaceId]);
+      const state = row.rows[0]!.state;
+      const upstream = state.jobs.find((j: {node: {type: string}}) => j.node.type === "agent");
+      const gate = state.jobs.find((j: {node: {type: string}}) => j.node.type === "manual");
+      const taskId = upstream.attempts.at(-1)?.task_id ?? this.documentAgentFixtures.at(-1)!.taskId;
+      const artifact = {id: randomUUID(), job_id: upstream.node.id, attempt: 1, path: upstream.node.paths[0], status: "accessible", document_id: documentId, document_version: documentVersion};
+      upstream.status = failed ? "failed" : "succeeded"; upstream.reason = ""; upstream.revision++;
+      upstream.attempts = [{number: 1, task_id: taskId, executor_id: upstream.executor_id, status: "completed", inputs: [], report: {result: "succeeded", report: "Completed by the E2E fixture executor", artifacts: [artifact]}, started_at: new Date().toISOString(), completed_at: new Date().toISOString()}];
+      gate.status = failed ? "pending" : "waiting_approval"; gate.reason = failed ? "upstream_failed" : ""; gate.revision++;
+      state.status = failed ? "failed" : "waiting_approval"; state.reason = "";
+      await db.query("UPDATE agent_task_queue SET status='completed',completed_at=now() WHERE id=$1", [taskId]);
+      await db.query("UPDATE pipeline_run SET state=$2,status=$4,revision=revision+1 WHERE id=$1 AND workspace_id=$3", [runId, JSON.stringify(state), this.workspaceId, state.status]);
+      return artifact;
     } finally { await db.end(); }
   }
 

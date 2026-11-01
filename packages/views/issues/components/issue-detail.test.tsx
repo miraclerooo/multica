@@ -21,6 +21,9 @@ const TEST_RESOURCES = { en: { agents: enAgents, common: enCommon, issues: enIss
 
 const mockViewport = vi.hoisted(() => ({ isMobile: false }));
 const mockLocalDirectoryHint = vi.hoisted(() => vi.fn());
+vi.mock("../../pipelines/run-details", () => ({ IssuePipelineCard: () => null }));
+vi.mock("../../projects/documents/associate-document", () => ({ IssueDocuments: () => null, AssociateDocument: () => null }));
+
 vi.mock("../../projects/components/local-directory-hint", () => ({
   LocalDirectoryHint: (props: unknown) => {
     mockLocalDirectoryHint(props);

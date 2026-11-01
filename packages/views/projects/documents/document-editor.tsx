@@ -55,6 +55,12 @@ import {
 } from "../../editor";
 import { useLocale, useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
+import { PublishedMaterialDialog } from "../../editor/published-material-link";
+import { publishedMaterialPath } from "@multica/core/documents/links";
+import { api } from "@multica/core/api";
+import { useConfigStore } from "@multica/core/config";
+import { useAppOrigin } from "../../navigation";
+import { DocumentSources } from "./document-sources";
 import { RevisionDiff, type DocumentComparison } from "./revision-diff";
 
 export function DocumentEditor({
@@ -93,6 +99,9 @@ export function DocumentEditor({
     action: "discard" | "save-local";
     open: boolean;
   }>({ action: "discard", open: false });
+  const [materialPath, setMaterialPath] = useState("");
+  const appOrigin = useAppOrigin();
+  const publicUrl = useConfigStore(s => s.attachmentPublicUrl);
   const richRef = useRef<ContentEditorRef>(null);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -339,6 +348,7 @@ export function DocumentEditor({
     .slice(0, 6);
   const sidebar = (
     <div className="p-4 space-y-5 text-caption">
+      <DocumentSources wsId={wsId} projectId={project.id} documentId={documentId} />
       <section className="document-info-card">
         <h2>{t(($) => $.documents.details)}</h2>
         <dl className="space-y-3">
@@ -602,7 +612,12 @@ export function DocumentEditor({
             )}
           </div>
         )}
-        <div className="document-canvas-scroll" ref={canvasRef}>
+        <div className="document-canvas-scroll" ref={canvasRef} onClickCapture={event => {
+          const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+          const href = anchor?.getAttribute("href");
+          const path = href ? publishedMaterialPath(href, [appOrigin ?? "", api.getBaseUrl(), publicUrl]) : null;
+          if (path) { event.preventDefault(); event.stopPropagation(); setMaterialPath(path); }
+        }}>
           <div className="document-heading">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-caption">
@@ -734,6 +749,7 @@ export function DocumentEditor({
       <aside className="document-inspector hidden xl:block border-l bg-muted/15 overflow-y-auto">
         {sidebar}
       </aside>
+      {materialPath && <PublishedMaterialDialog path={materialPath} onClose={() => setMaterialPath("")} renderMarkdown={text => <ReadonlyContent content={text} />} />}
       <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
         <SheetContent
           side="right"

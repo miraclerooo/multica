@@ -221,6 +221,11 @@ export default function WorkspaceLayout() {
           name="issue/[id]/picker/due-date"
           options={SHEET_OPTIONS}
         />
+        <Stack.Screen name="issue/[id]/pipelines" options={SHEET_OPTIONS} />
+        <Stack.Screen name="pipeline/[id]" />
+        <Stack.Screen name="pipeline/material" />
+        <Stack.Screen name="project/[id]/documents" />
+        <Stack.Screen name="project/[id]/document" />
         <Stack.Screen name="issue/[id]/runs" options={SHEET_OPTIONS} />
         <Stack.Screen
           name="issue/[id]/run/[taskId]"

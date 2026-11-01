@@ -85,6 +85,7 @@ export default function ProjectDetail() {
   const createPin = useCreatePin();
   const deletePin = useDeletePin();
   const { t } = useT("projects");
+  const { t: pt } = useT("issues");
 
   const onPressMore = () => {
     if (!project) return;
@@ -232,6 +233,7 @@ export default function ProjectDetail() {
                 });
             }}
           />
+          <Button variant="outline" onPress={() => router.push(`/${wsSlug}/project/${id}/documents`)}><Text>{pt("pipeline.documents")}</Text></Button>
           <ProjectResourcesSection
             projectId={id}
             onAdd={() => {

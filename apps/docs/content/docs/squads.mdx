@@ -103,6 +103,18 @@ To keep existing work owned, issues and automations currently assigned to the sq
 Archiving cannot be undone.
 </Callout>
 
+## Pipeline mode
+
+Open a squad's **Pipeline** tab to edit a `gitlab_yaml` or `hermes_yaml` definition. Roles come from the squad's full roster; the same role can handle several nodes, and a squad with only its leader is supported. The preview renders the server's compiled plan, including your node names and dependencies.
+
+**Save version** keeps an immutable definition. **Save and enable** also makes it the default for future runs; existing runs retain their original definition and materials. Switching back to Instructions preserves the squad's instructions. Dialect changes start separate drafts because automatic conversion is unavailable. Mika proposes a complete draft that you validate and publish explicitly.
+
+An issue's Pipeline card opens its run history, node attempts, logs and published materials. A manual gate waits for upstream work and required materials. Human reviewers can approve or reject; rejection requires a comment. Reviews retain fixed document revisions, attachments or repository SHAs. Missing price data appears as **Unpriced**.
+
+Project documents are grouped by source issue. Link a published deliverable to an existing or new Markdown document to insert its link and preserve its source. Repeating the operation does not duplicate the link. Unlinking an issue keeps the Markdown body, source files and history. Concurrent edits retain your draft for comparison.
+
+Web and Desktop share the editor. Mobile provides run and material viewing, approval and grouped Markdown reading; edit YAML on Web or Desktop.
+
 ## Using the CLI
 
 ```bash

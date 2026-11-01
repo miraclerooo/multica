@@ -2,6 +2,9 @@
   width: 244px;
   flex-shrink: 0;
 }
+.document-directory-sheet .document-directory-header {
+  padding-right: 48px;
+}
 .document-inspector {
   width: 288px;
   flex-shrink: 0;

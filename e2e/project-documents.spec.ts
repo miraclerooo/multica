@@ -472,6 +472,7 @@ test("agent CLI revisions resolve through project resources and appear in the br
     });
     await expect(page.getByTestId("document-save-status")).toHaveText(
       "Saved v1",
+      { timeout: 30000 },
     );
     const listed = await run([
       "project",

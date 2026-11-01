@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   documentDraftKey,
   documentListOptions,
+  documentGroupsOptions,
   useCreateDocument,
   useDocumentDraftStore,
 } from "@multica/core/documents";
@@ -20,7 +21,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-  DialogTrigger,
 } from "@multica/ui/components/ui/dialog";
 import { Sheet, SheetContent } from "@multica/ui/components/ui/sheet";
 import { cn } from "@multica/ui/lib/utils";
@@ -33,6 +33,7 @@ import "./document-workspace.css";
 
 export function ProjectDocumentWorkspace({ project }: { project: Project }) {
   const { t } = useT("projects");
+  const { t: pt } = useT("squads");
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
   const router = useNavigation();
@@ -43,8 +44,13 @@ export function ProjectDocumentWorkspace({ project }: { project: Project }) {
   const drafts = useDocumentDraftStore((s) => s.draft.drafts);
   const create = useCreateDocument(wsId, project.id);
   const [search, setSearch] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  useEffect(() => { const timer = setTimeout(() => setSearchQuery(search), 250); return () => clearTimeout(timer); }, [search]);
+  const groups = useQuery(documentGroupsOptions(wsId, project.id, { q: searchQuery }));
   const [newOpen, setNewOpen] = useState(false);
   const [directoryOpen, setDirectoryOpen] = useState(false);
+  const directoryTrigger = useRef<HTMLButtonElement>(null);
+  const createReturnFocus = useRef<HTMLButtonElement | null>(null);
   const [kind, setKind] = useState<"spec" | "document">("spec");
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -57,12 +63,6 @@ export function ProjectDocumentWorkspace({ project }: { project: Project }) {
       );
     }
   }, [router, paths, project.id, firstDocumentId]);
-  const matching = documents.filter((doc) => {
-    const draft = drafts[documentDraftKey(wsId, project.id, doc.id)];
-    return `${draft?.title ?? doc.title}\n${draft?.body ?? doc.body}`
-      .toLocaleLowerCase()
-      .includes(search.toLocaleLowerCase());
-  });
   const createDocument = async () => {
     if (create.isPending || !title.trim()) return;
     setError(null);
@@ -79,50 +79,44 @@ export function ProjectDocumentWorkspace({ project }: { project: Project }) {
   };
   const directory = (
     <div className="flex h-full flex-col min-h-0">
-      <div className="flex items-center justify-between px-4 pt-4 pb-3">
+      <div className="document-directory-header flex items-center justify-between px-4 pt-4 pb-3">
         <h2 className="text-label font-semibold">
           {t(($) => $.documents.directory)}
         </h2>
-        <DialogTrigger
-          render={
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              aria-label={t(($) => $.documents.new)}
-              onClick={() => setDirectoryOpen(false)}
-            />
-          }
+        <Button
+          size="icon-xs"
+          variant="ghost"
+          aria-label={t(($) => $.documents.new)}
+          onClick={(event) => {
+            createReturnFocus.current = directoryOpen
+              ? directoryTrigger.current
+              : event.currentTarget;
+            setDirectoryOpen(false);
+            setNewOpen(true);
+          }}
         >
           <Plus />
-        </DialogTrigger>
+        </Button>
       </div>
       <div className="relative mx-3 mb-4">
         <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          aria-label={t(($) => $.documents.search)}
-          placeholder={t(($) => $.documents.search)}
+          aria-label={pt(($) => $.pipeline.search)}
+          placeholder={pt(($) => $.pipeline.search)}
           className="pl-8 text-caption"
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-        {(["spec", "document"] as const).map((group) => {
-          const items = matching.filter((doc) => doc.kind === group);
+        {groups.isError && <p role="alert" className="pipeline-error">{pt(($) => $.pipeline.failed)}</p>}
+        {groups.data?.groups.map((group) => {
+          const items = group.documents;
           return (
-            <section key={group} className="mb-5">
-              <h3 className="px-2 mb-2 flex items-center justify-between text-micro font-semibold text-muted-foreground uppercase tracking-wide">
-                <span className="flex items-center gap-1.5">
-                  {group === "spec" ? (
-                    <BookOpen className="size-3.5" />
-                  ) : (
-                    <FileText className="size-3.5" />
-                  )}
-                  {group === "spec"
-                    ? t(($) => $.documents.specs)
-                    : t(($) => $.documents.guides)}
-                </span>
-                <span>{items.length}</span>
+            <section key={group.issue_id ?? "project-materials"} className="mb-5" data-issue-id={group.issue_id ?? ""}>
+              <h3 className="px-2 mb-2 flex items-start justify-between gap-2 text-micro font-semibold text-muted-foreground">
+                {group.issue_id ? <AppLink className="min-w-0 break-words hover:text-foreground" href={paths.issueDetail(group.issue_id)}>{group.identifier} · {group.title}</AppLink> : <span>{pt(($) => $.pipeline.project_materials)}</span>}
+                <span>{group.count}</span>
               </h3>
               {items.map((doc) => {
                 const draft =
@@ -164,7 +158,7 @@ export function ProjectDocumentWorkspace({ project }: { project: Project }) {
             </section>
           );
         })}
-        {search && !matching.length && (
+        {search && !groups.isLoading && !groups.data?.documents.length && (
           <p className="px-2 text-caption text-muted-foreground">
             {t(($) => $.documents.no_results)}
           </p>
@@ -208,6 +202,7 @@ export function ProjectDocumentWorkspace({ project }: { project: Project }) {
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="md:hidden px-3 pt-2">
               <Button
+                ref={directoryTrigger}
                 size="sm"
                 variant="ghost"
                 onClick={() => setDirectoryOpen(true)}
@@ -255,13 +250,13 @@ export function ProjectDocumentWorkspace({ project }: { project: Project }) {
         <Sheet open={directoryOpen} onOpenChange={setDirectoryOpen}>
           <SheetContent
             side="left"
-            className="p-0 w-72"
+            className="document-directory-sheet p-0 w-72"
             aria-label={t(($) => $.documents.directory)}
           >
             {directory}
           </SheetContent>
         </Sheet>
-        <DialogContent>
+        <DialogContent finalFocus={createReturnFocus}>
           <form
             onSubmit={(e) => {
               e.preventDefault();

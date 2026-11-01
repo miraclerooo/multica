@@ -25,7 +25,8 @@
     "runtime": "執行時",
     "attachment": "附件",
     "create_agent": "建立智慧體",
-    "unknown": "未知頁面"
+    "unknown": "未知頁面",
+    "pipeline": "流水線"
   },
   "help": {
     "trigger": "幫助",

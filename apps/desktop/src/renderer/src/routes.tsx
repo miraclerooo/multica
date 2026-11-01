@@ -1,3 +1,4 @@
+import { PipelineRunPage } from "@multica/views/pipelines";
 import { useEffect } from "react";
 import { createMemoryRouter, Outlet, useMatches } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
@@ -221,7 +222,8 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "Member" },
           },
           { path: "squads", element: <SquadsPage />, handle: { title: "Squads" } },
-          {
+          { path: "pipelines/:id", element: <PipelineRunPage />, handle: { title: "Pipeline" } },
+        {
             path: "squads/:id",
             element: <SquadDetailPageView />,
             handle: { title: "Squad" },
