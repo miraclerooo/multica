@@ -10,7 +10,8 @@
     "pinned": "Pinned",
     "issues": "Issues",
     "projects": "Projects",
-    "account_settings": "Account settings"
+    "account_settings": "Account settings",
+    "pipelines": "Pipelines"
   },
   "routes": {
     "issues": "Issues",

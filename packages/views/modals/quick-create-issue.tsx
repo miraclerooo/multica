@@ -122,6 +122,7 @@ export function AgentCreatePanel({
   setIsExpanded: (v: boolean) => void;
 }) {
   const { t } = useT("modals");
+  const { t: tExecution } = useT("squads");
   const { t: tIssues } = useT("issues");
   const { t: tProjects } = useT("projects");
   const sendShortcut = useShortcut("send");
@@ -364,6 +365,7 @@ export function AgentCreatePanel({
   const usesExplicitFields = priority !== "none" || dueDate !== null;
   const versionCheck = usesExplicitFields ? fieldVersionCheck : baseVersionCheck;
   const versionBlocked =
+    actor?.type !== "squad" &&
     canPrecheckVersion &&
     (baseVersionCheck.state !== "ok" ||
       (usesExplicitFields && fieldVersionCheck.state !== "ok"));
@@ -425,7 +427,7 @@ export function AgentCreatePanel({
     onSubmit: async (md): Promise<boolean> => {
       // The button already disables on !actor / versionBlocked, but the
       // ⌘+Enter path bypasses it — re-guard here and keep the draft in place.
-      if (!actor || versionBlocked || (anchorCommentId && !sourcePreview)) return false;
+      if (!actor || actor.type === "squad" || versionBlocked || (anchorCommentId && !sourcePreview)) return false;
       // Flush the prompt editor's pending debounce before snapshotting — see
       // ManualCreatePanel.
       const pendingPrompt = editorRef.current?.flushPendingUpdate?.();
@@ -441,9 +443,7 @@ export function AgentCreatePanel({
             mode: "agent",
             capture_token: sourcePreview.capture_token,
             quick_create: {
-              ...(actor.type === "agent"
-                ? { agent_id: actor.id }
-                : { squad_id: actor.id }),
+              agent_id: actor.id,
               prompt: md,
               project_id: projectId ?? undefined,
               ...(priority !== "none" ? { priority } : {}),
@@ -453,9 +453,7 @@ export function AgentCreatePanel({
           });
         } else {
           await api.quickCreateIssue({
-            ...(actor.type === "agent"
-              ? { agent_id: actor.id }
-              : { squad_id: actor.id }),
+            agent_id: actor.id,
             prompt: md,
             project_id: projectId ?? undefined,
             ...(priority !== "none" ? { priority } : {}),
@@ -568,6 +566,12 @@ export function AgentCreatePanel({
     },
   });
   const submit = () => {
+    if (composer.submitting || gate.isBlocked()) return;
+    if (actor?.type === "squad") {
+      setManual({assigneeType: "squad", assigneeId: actor.id});
+      switchToManual();
+      return;
+    }
     void composer.submit();
   };
   const submitting = composer.submitting;
@@ -587,8 +591,9 @@ export function AgentCreatePanel({
     // there — local state can hold a value seeded from `data` that was never
     // written through a picker.
     setShared({ projectId: projectId ?? undefined, priority, dueDate });
+    const md = editorRef.current?.flushPendingUpdate?.() ?? editorRef.current?.getMarkdown() ?? "";
+    setAgent({prompt: md});
     if (!draft.manual.description.trim()) {
-      const md = editorRef.current?.getMarkdown() ?? "";
       if (md) setManual({ description: md });
     }
     if (!draft.manual.assigneeId && actor) {
@@ -634,7 +639,7 @@ export function AgentCreatePanel({
         <span className="flex items-center gap-1"><Check className="size-3.5" />{t(($) => $.create_issue.agent.sent_label)}</span>
       ) : (
         <>
-          {t(($) => $.create_issue.agent.submit)}
+          {actor?.type === "squad" ? tExecution(($) => $.execution.manage) : t(($) => $.create_issue.agent.submit)}
           {sendShortcut ? (
             // Touch phones have no ⌘ key and the narrowest footer row
             // to spare — drop the hint at the same breakpoint the
@@ -698,10 +703,8 @@ export function AgentCreatePanel({
           </div>
         </div>
 
-        {/* Actor picker — agents and squads in one searchable list. Squads
-            route to their leader agent on the backend; the leader runs the
-            quick-create flow with the squad's Operating Protocol layered
-            on top, so a squad pick is "ask this squad to file the issue". */}
+        {/* Squad prompts continue in the manual form, where execution can be
+            selected atomically. Individual agents retain quick creation. */}
         <div className="px-5 pt-1 pb-2 shrink-0">
           <ActorPicker
             actor={actor}

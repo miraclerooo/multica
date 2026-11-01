@@ -39,9 +39,31 @@ export type ExecutionSelection =
   | { mode: "default" | "markdown"; pipeline_id?: never; definition_id?: never }
   | { mode: "pipeline"; pipeline_id: string; definition_id?: string };
 
+// Explicit pipeline choices submit the previewed version, never a newer catalog pointer.
+export function selectionFromPreview(selection: ExecutionSelection, preview: IssueExecution | null | undefined): ExecutionSelection | null {
+  if (!preview || preview.requested_mode !== selection.mode || !["markdown", "pipeline"].includes(preview.mode) ||
+      !["waiting_runtime", "ready", "started"].includes(preview.state)) return null;
+  if (selection.mode !== "pipeline") return { mode: selection.mode };
+  if (preview.mode !== "pipeline" || preview.pipeline_id !== selection.pipeline_id || !preview.definition_id ||
+      (selection.definition_id && selection.definition_id !== preview.definition_id)) return null;
+  return {mode: "pipeline", pipeline_id: selection.pipeline_id, definition_id: preview.definition_id};
+}
+
+export function safeUpgradeGuide(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password && !url.search && !url.hash ? url.href : null;
+  } catch { return null; }
+}
+
 export function canStartIssueExecution(execution: IssueExecution | null | undefined): boolean {
   return execution?.mode === "pipeline" && !!execution.pipeline_id && !!execution.definition_id &&
     (execution.state === "ready" || execution.state === "waiting_runtime") &&
     execution.readiness.ready === true && execution.readiness.runtimes.every(r => r.status === "supported" &&
       r.daemon.capabilities.includes(PIPELINE_SELECTION_CAPABILITY) && r.disk?.capabilities.includes(PIPELINE_SELECTION_CAPABILITY) === true);
+}
+
+// Opaque receipt key; it carries no identity or authorization information.
+export function newExecutionRequestKey(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }

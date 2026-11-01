@@ -1,5 +1,9 @@
 "use client";
 
+import type { CreateIssueRequest } from "@multica/core/types";
+import { ExecutionSelectionField, useExecutionSelection } from "../pipelines/execution-selection";
+import { CreatedIssueResult } from "../pipelines/execution-summary";
+
 import { issueStatusCategory } from "@multica/core/issues";
 import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -346,6 +350,9 @@ export function ManualCreatePanel({
   // Fetch parent issue details for the chip (status/identifier/title).
   // List cache usually has it already, so this resolves synchronously.
   const wsId = useWorkspaceId();
+  const executionDraft = useExecutionSelection(assigneeType === "squad" ? assigneeId : undefined);
+  const [createdExecutionIssue, setCreatedExecutionIssue] = useState<{id: string; unconfirmed?: boolean; label?: string} | null>(null);
+  const createdExecutionRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
   const { categoryOf: draftStatusCategory, colorOf, iconOf } = useIssueStatuses(wsId);
   const { data: workspaceProperties = [] } = useQuery(propertyListOptions(wsId));
@@ -527,6 +534,7 @@ export function ManualCreatePanel({
     uploadGate: gate,
     normalize: () => title.trim(),
     onSubmit: async (): Promise<boolean> => {
+      if (!executionDraft.canSubmit || createdExecutionRef.current) return false;
       setUnavailablePropertyRemoved(false);
       // Flush the description editor's pending debounce into the store BEFORE
       // snapshotting, so a late flush of pre-submit typing cannot masquerade
@@ -539,54 +547,31 @@ export function ManualCreatePanel({
       const activeAttachmentIds = draftAttachments
         .filter((a) => contentReferencesAttachment(description ?? "", a))
         .map((a) => a.id);
-      let issue: Issue;
-      if (anchorCommentId && sourcePreview) {
-        issue = await createCommentSubIssueMutation.mutateAsync({
-          anchorCommentId,
-          data: {
-            mode: "manual",
-            capture_token: sourcePreview.capture_token,
-            issue: {
-              title: title.trim(),
-              description,
-              status,
-              priority,
-              assignee_type: assigneeType,
-              assignee_id: assigneeId,
-              start_date: startDate || undefined,
-              due_date: dueDate || undefined,
-              attachment_ids: activeAttachmentIds.length > 0 ? activeAttachmentIds : undefined,
-              label_ids: labelIds.length > 0 ? labelIds : undefined,
-              ...(Object.keys(propertyValues).length > 0 ? { properties: propertyValues } : {}),
-              stage: parentIssueId && stage != null ? stage : undefined,
-              project_id: projectId,
-            },
-          },
-        });
-      } else {
-        issue = await createIssueMutation.mutateAsync({
-          title: title.trim(),
-          description,
-          status,
-          priority,
-          assignee_type: assigneeType,
-          assignee_id: assigneeId,
-          start_date: startDate || undefined,
-          due_date: dueDate || undefined,
-          attachment_ids: activeAttachmentIds.length > 0 ? activeAttachmentIds : undefined,
-          // The server attaches these in the same transaction as the create and
-          // echoes them back as `issue.labels`, so a stale selection fails the
-          // create instead of leaving a committed-but-unlabeled issue. A legacy
-          // backend that predates this ignores the field — handled by the
-          // compatibility fallback below.
-          label_ids: labelIds.length > 0 ? labelIds : undefined,
-          ...(Object.keys(propertyValues).length > 0 ? { properties: propertyValues } : {}),
-          parent_issue_id: parentIssueId,
-          // Stage is only meaningful for a sub-issue (relative to its siblings).
-          stage: parentIssueId && stage != null ? stage : undefined,
-          project_id: projectId,
-        });
+      const request: CreateIssueRequest = {
+        title: title.trim(), description, status, priority,
+        assignee_type: assigneeType, assignee_id: assigneeId,
+        start_date: startDate || undefined, due_date: dueDate || undefined,
+        attachment_ids: activeAttachmentIds.length ? activeAttachmentIds : undefined,
+        label_ids: labelIds.length ? labelIds : undefined,
+        ...(Object.keys(propertyValues).length ? {properties: propertyValues} : {}),
+        ...(!anchorCommentId ? {parent_issue_id: parentIssueId} : {}),
+        stage: parentIssueId && stage != null ? stage : undefined, project_id: projectId,
+        ...(executionDraft.submitSelection ? {execution: executionDraft.submitSelection} : {}),
+      };
+      if (request.execution) {
+        const body = JSON.stringify(request);
+        const state = useIssueDraftStore.getState();
+        const previous = state.draft.manual.executionReceipt;
+        const receipt = previous?.body === body ? previous : {body, key: crypto.randomUUID()};
+        if (receipt !== previous) state.setManual({executionReceipt: receipt});
+        request.idempotency_key = receipt.key;
+        submittedDraftRef.current = useIssueDraftStore.getState().draft;
       }
+      const issue: Issue = anchorCommentId && sourcePreview
+        ? await createCommentSubIssueMutation.mutateAsync({anchorCommentId, data: {
+            mode: "manual", capture_token: sourcePreview.capture_token, issue: request,
+          }})
+        : await createIssueMutation.mutateAsync(request);
 
       // Link queued children to the new parent. Deferred to after create
       // because the new issue's ID doesn't exist yet. Partial failures don't
@@ -686,11 +671,20 @@ export function ManualCreatePanel({
           </div>
         ), { duration: 5000 });
       }
+      if (assigneeType === "squad" && !keepOpen && useIssueDraftStore.getState().draft === submittedDraftRef.current) {
+        createdExecutionRef.current = issue.id;
+        setCreatedExecutionIssue({id: issue.id, label: `${issue.identifier} · ${issue.title}`});
+      }
       return true;
     } catch (err) {
       const sourceCode = err instanceof ApiError && err.body && typeof err.body === "object"
         ? (err.body as { code?: unknown }).code
         : undefined;
+      if (sourceCode === "execution_snapshot_missing" && err instanceof ApiError && err.body && typeof err.body === "object" && "issue_id" in err.body && typeof err.body.issue_id === "string") {
+        createdExecutionRef.current = err.body.issue_id;
+        setCreatedExecutionIssue({id: err.body.issue_id, unconfirmed: true});
+        return false;
+      }
       if (anchorCommentId && (
         sourceCode === "source_context_changed"
         || sourceCode === "anchor_comment_deleted"
@@ -821,7 +815,7 @@ export function ManualCreatePanel({
       const untouched =
         useIssueDraftStore.getState().draft === submittedDraftRef.current;
       if (untouched) clearDraft();
-      if (!mountedRef.current || !untouched) return;
+      if (!mountedRef.current || !untouched || createdExecutionRef.current) return;
       if (keepOpen) {
         resetForNextIssue();
       } else {
@@ -835,7 +829,7 @@ export function ManualCreatePanel({
   // at the fix; otherwise hand off to the composer (single-flight + gate live
   // there).
   const handleSubmit = () => {
-    if (anchorCommentId && !sourcePreview) return;
+    if ((anchorCommentId && !sourcePreview) || !executionDraft.canSubmit || createdExecutionRef.current) return;
     if (!title.trim()) {
       titleEditorRef.current?.focus();
       return;
@@ -917,7 +911,7 @@ export function ManualCreatePanel({
       // for a missing title — a native-disabled button is not focusable, so
       // keyboard and screen-reader users could never reach the tooltip that
       // explains why nothing happens. `handleSubmit` is the real gate either way.
-      disabled={submitBusy}
+      disabled={submitBusy || !executionDraft.canSubmit}
       aria-disabled={submitState === "missing_title" || submitState === "source_unavailable" || undefined}
       aria-busy={submitBusy || undefined}
       // The Button base only dims/blocks on native `disabled`, so aria-disabled
@@ -949,6 +943,8 @@ export function ManualCreatePanel({
       )}
     </Button>
   );
+
+  if (createdExecutionIssue) return <CreatedIssueResult issueId={createdExecutionIssue.id} label={createdExecutionIssue.label} unconfirmed={createdExecutionIssue.unconfirmed} onClose={onClose} />;
 
   return (
     <>
@@ -999,6 +995,7 @@ export function ManualCreatePanel({
               </div>
             </div>
 
+            <div className="flex flex-1 min-h-0 flex-col overflow-y-auto">
             {/* Title */}
             <div className="px-5 pb-2 shrink-0">
               <TitleEditor
@@ -1015,7 +1012,7 @@ export function ManualCreatePanel({
             </div>
 
             {/* Description — takes remaining space */}
-            <div {...descDropZoneProps} className="relative flex flex-1 min-h-0 overflow-y-auto px-5">
+            <div {...descDropZoneProps} className="relative flex flex-1 min-h-20 shrink-0 overflow-y-auto px-5">
               <ContentEditor
                 ref={descEditorRef}
                 defaultValue={draft.manual.description}
@@ -1043,13 +1040,15 @@ export function ManualCreatePanel({
               />
             )}
 
+            <ExecutionSelectionField value={executionDraft} />
+
             {/* Pre-trigger preview — a passive caption above the toolbar; reveals
                 when an agent assignee will pick the issue up. */}
-            {assigneeId ? (
+            {assigneeId && assigneeType !== "squad" ? (
               <CreateRunHint assigneeType={assigneeType} assigneeId={assigneeId} status={status} />
-            ) : (
+            ) : !assigneeId ? (
               <WorkflowHandoffHint projectId={projectId} status={status} />
-            )}
+            ) : null}
 
             {/* Property toolbar — each field renders per the Settings → Preferences → Issue creation
                 selection (see showField above). */}
@@ -1467,6 +1466,7 @@ export function ManualCreatePanel({
               }}
             />
 
+            </div>
             {/* Footer — same 2x2-grid-on-phones / single-row-from-`sm` shape
                 as the agent panel; see the note on AgentCreatePanel's footer
                 for why (MUL-6236). Tooltip renders no DOM and
@@ -1521,7 +1521,7 @@ export function ManualCreatePanel({
 /** className for DialogContent in manual mode — depends on isExpanded.
  *  Exported so the shell (which now owns the DialogContent) can apply the same
  *  visual treatment without duplicating it. */
-export function manualDialogContentClass(isExpanded: boolean) {
+export function manualDialogContentClass(isExpanded: boolean, hasExecutionSelection = false) {
   return cn(
     "p-0 gap-0 flex flex-col overflow-hidden",
     "!top-1/2 !left-1/2 !-translate-x-1/2",
@@ -1534,7 +1534,7 @@ export function manualDialogContentClass(isExpanded: boolean) {
     "!w-full !max-w-[calc(100vw-1.5rem)]",
     isExpanded
       ? "!h-5/6 !-translate-y-1/2 sm:!max-w-4xl"
-      : "!h-96 !-translate-y-1/2 sm:!max-w-2xl",
+      : cn(hasExecutionSelection ? "!h-[min(42rem,calc(100dvh-2rem))]" : "!h-96", "!-translate-y-1/2 sm:!max-w-2xl"),
   );
 }
 
@@ -1548,12 +1548,13 @@ export function CreateIssueModal(props: {
   data?: Record<string, unknown> | null;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const hasExecutionSelection = useIssueDraftStore(s => s.draft.manual.assigneeType === "squad" && !!s.draft.manual.assigneeId);
   return (
     <DialogRoot open onOpenChange={(v) => { if (!v) props.onClose(); }}>
       <DialogContent
         finalFocus={false}
         showCloseButton={false}
-        className={manualDialogContentClass(isExpanded)}
+        className={manualDialogContentClass(isExpanded, hasExecutionSelection)}
       >
         <ManualCreatePanel
           {...props}

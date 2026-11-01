@@ -1,6 +1,6 @@
 "use client";
 
-import { SquadPipeline } from "../../pipelines/squad-pipeline";
+import { SquadPipelineCatalog as SquadPipeline } from "../../pipelines/catalog-workspace";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@multica/core/api";

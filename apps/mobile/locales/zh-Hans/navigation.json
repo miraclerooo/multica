@@ -10,7 +10,8 @@
     "pinned": "已固定",
     "issues": "任务",
     "projects": "项目",
-    "account_settings": "账号设置"
+    "account_settings": "账号设置",
+    "pipelines": "流水线"
   },
   "routes": {
     "issues": "任务",

@@ -28,8 +28,11 @@ import type {
   Project,
 } from "@multica/core/types";
 import type { AssigneeValue } from "@/components/issue/pickers/assignee-picker-body";
+import type { ExecutionSelection } from "@multica/core/pipelines/execution";
 
 interface NewIssueDraftState {
+  executionSelections: Record<string, ExecutionSelection>;
+  setExecutionSelection: (squadId: string, selection: ExecutionSelection) => void;
   status: IssueStatus;
   priority: IssuePriority;
   assignee: AssigneeValue;
@@ -56,12 +59,14 @@ const INITIAL: Pick<
 
 export const useNewIssueDraftStore = create<NewIssueDraftState>((set) => ({
   ...INITIAL,
+  executionSelections: {},
+  setExecutionSelection: (squadId, selection) => set(s => ({executionSelections: {...s.executionSelections, [squadId]: selection}})),
   setStatus: (next) => set({ status: next }),
   setPriority: (next) => set({ priority: next }),
   setAssignee: (next) => set({ assignee: next }),
   setDueDate: (next) => set({ dueDate: next }),
   setProject: (next) => set({ project: next }),
-  reset: () => set({ ...INITIAL }),
+  reset: () => set({ ...INITIAL, executionSelections: {} }),
 }));
 
 /**

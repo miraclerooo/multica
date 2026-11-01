@@ -79,7 +79,7 @@ export class TestApiClient {
       this.documentAgentFixtures.push({ runtimeId, agentId, taskId });
       const token = `mat_${randomBytes(32).toString("hex")}`;
       await db.query(`INSERT INTO task_token (token_hash, task_id, agent_id, workspace_id, user_id, expires_at) VALUES ($1, $2, $3, $4, $5, now() + interval '1 hour')`, [createHash("sha256").update(token).digest("hex"), taskId, agentId, this.workspaceId, userId]);
-      return { token, agentId, taskId, workspaceId: this.workspaceId };
+      return { token, agentId, runtimeId, taskId, workspaceId: this.workspaceId };
     } finally { await db.end(); }
   }
 
@@ -92,6 +92,7 @@ export class TestApiClient {
       await db.query("DELETE FROM agent_task_queue WHERE pipeline_run_id IN (SELECT id FROM pipeline_run WHERE squad_id=$1 AND workspace_id=$2)", [squadId, this.workspaceId]);
       await db.query("DELETE FROM pipeline_run WHERE squad_id=$1 AND workspace_id=$2", [squadId, this.workspaceId]);
       await db.query("DELETE FROM pipeline_definition WHERE squad_id=$1 AND workspace_id=$2", [squadId, this.workspaceId]);
+      await db.query("DELETE FROM squad_pipeline WHERE squad_id=$1 AND workspace_id=$2", [squadId, this.workspaceId]);
       await db.query("DELETE FROM squad_member WHERE squad_id=$1", [squadId]);
       await db.query("DELETE FROM squad WHERE id=$1 AND workspace_id=$2", [squadId, this.workspaceId]);
     } finally { await db.end(); }

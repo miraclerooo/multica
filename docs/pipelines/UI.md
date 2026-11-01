@@ -1,15 +1,47 @@
 # Pipeline and task document interfaces (YANF-8)
 
-The UI follows the approved pipeline and Markdown-document prototypes. Its initial engine/API baseline was PR #6 at `0e3a755d1da07e62ca3575cd103b6e774eeb6f2b`; it now also incorporates the independently verified D02 backend commit `009ad8d7343db0278e42f1c06805407fc304c014`. That integration changes CLI error handling, without changing the engine/API or migrations.
+The v1.5 UI builds on the verified backend PR #8 at `96e39979ab57651082bb20191518df978b493a55`. It adds independently named squad pipelines, per-issue execution choices, and continuation of a saved issue after its selected environments become compatible. The previous v1.4 pipeline/Markdown implementation and R07/D01/R2-01 protections remain in place. Backend, migrations, CLI errors, compiler and scheduler are supplied by the stacked dependency; this UI does not add execution semantics.
 
 ## Entry points
 
-- Squad → Pipeline: capabilities, dialect drafts, source diagnostics, compiled graph, complete-roster bindings, version comparison, immutable saves and atomic activation. Unsupported kinds remain readable with writes disabled. Dialect changes keep separate drafts; they do not convert or replace the original instructions.
+- Squad → Pipeline: named catalog, new/rename, independent version histories and a separately saved squad default; capabilities, dialect drafts, source diagnostics, compiled graph, complete-roster bindings, version comparison, immutable saves and atomic activation. Unsupported kinds remain readable with writes disabled. Dialect changes keep separate drafts; they do not convert or replace the original instructions.
 - Issue → Pipeline card → `/{workspace}/pipelines/{run}`: history, actual nodes, attempt selection, task logs, dependencies, pinned materials, retry, cancel and human decisions. The Web and Desktop routers mount the same view; Desktop also recognizes the new tab subject and diagnostics route.
 - Mika workbench: sends the current source, selected dialect, squad policy and full roster through the existing chat API. A complete returned YAML block must compile before adoption. Adoption keeps a draft; save/activation remains explicit. Unobtained reference files are identified as such.
 - Issue deliverable viewer / pipeline artifact catalog → Link to project document: select a same-project Markdown document or create one, append a source through the real association API, and retain form fields on conflict. Issue documents provide reverse navigation and relationship-only unlinking.
 - Project → Specs & Docs: task groups keyed by stable issue IDs, current task names, server-side search, unassociated Project materials, existing Markdown editing/history and source provenance. Fixed internal Markdown content links use authenticated transport on Web, Desktop and mobile; external URLs keep their ordinary link behavior.
-- Mobile: issue run history, vertical nodes, attempts and existing task transcript routes, fixed material readers, approval and grouped Markdown reading. YAML editing stays on Web/Desktop.
+- Mobile → More → Pipelines: squad/catalog/version/default formSheet pickers and native text editing for YAML. New Issue has its own execution picker, preview and confirmed result/continuation. Issue views retain run history, vertical nodes, transcripts, fixed materials, approval and grouped Markdown. Interactive graph editing and Mika authoring remain on Web/Desktop.
+
+## v1.5 selection and continuation
+
+The shared Web/Desktop squad route mounts `catalog-workspace.tsx` around the existing YAML/graph editor. Catalog entries use `GET/POST /api/pipelines/catalog` and `PATCH /catalog/:id`; their `executable_definition_id` is loaded to display actual kind and independent version. Editor histories filter by `pipeline_id`. Saving a version alone does not alter the squad default. An empty default selector opens creation instead of writing an invalid binding.
+
+Manual New Issue, including manual comment-source capture, uses `POST /api/pipelines/preflight`. Choices are remembered by squad; a personal/different squad assignment cannot submit foreign IDs. The explicit pipeline request carries the displayed `definition_id`, its `pipeline_id`, and one stable create receipt. The agent-assisted capture API has no task execution selector: its squad action carries the prompt and actor into the manual form for direct execution selection; it does not send invented quick-create fields or start a second path.
+
+Confirmed squad creation shows the actual issue and saved selection immediately. A malformed selection acknowledgement retains the draft and provides the already-created issue for inspection. Recheck uses `GET /api/issues/:id/execution`; continuation uses `POST /execution/start` on that ID, never another create. Publishing a later version does not replace the saved version. Human/server capability checks and `canStartIssueExecution` protect the button and callback.
+
+The client consumes the four backend feature flags. Runtime support comes from the returned readiness/capabilities, not version-string guesses. Daemon and observed disk identity remain separate; null disk data stays unknown. Upgrade actions follow the response: user-executed official update, safe deployment guide, unconfigured channel, or wait/recheck. Nothing upgrades, restarts or generates an agent run merely to inspect compatibility.
+
+Server data stays in Query. Draft source/name, reviewed catalog/squad revision, selected version and creation receipt stay client-owned. Source fields wait for their original definition before editing. Own rename/save operations are serialized; external revision conflicts preserve source for explicit comparison. A legacy squad draft can be adopted into its one migrated catalog identity without overwriting an existing independent draft. Mobile owns all requests/queries/subscriptions and draft stores, including logout cleanup; it imports only pure rules/schemas and types from core.
+
+The browser canonical flow is `e2e/pipeline-selection.spec.ts`. It uses authenticated local HTTP/PostgreSQL and fake executors/build reports. Mobile Node tests verify its independent transport and draft logic; iOS export verifies bundling. No simulator is installed, so these are not native rendering/press/keyboard or cross-client reconnect claims. Web/Desktop share the production route; Electron window visuals remain unverified. The historical full Go repocache EPERM and later 114-case single-package result, old approval 5-second timeout/15-second passing configuration, and real Mika/agent/GitHub execution limits remain applicable. This delivery does not certify all 55 acceptance items.
+
+## v1.5 verification
+
+These checks cover the new UI delta on backend `96e39979ab57651082bb20191518df978b493a55`:
+
+| Check | Result |
+| --- | --- |
+| Core pipeline and API schema tests | 181 passed in 6 files |
+| Shared pipeline views and manual/quick creation tests | 133 passed in 7 files; includes forced callbacks after permission/capability loss, squad quick-capture handoff and the dialog shell |
+| Mobile | 297 tests and iOS wrapper checks passed; final independent transport/draft selection subset: 8 passed. Typecheck and lint passed |
+| Types | Core, views, Web, Desktop node/renderer and mobile passed |
+| Relevant lint / docs | Core, views and mobile passed; landing dictionary checks: 5 passed; Fumadocs MDX generation passed |
+| Real browser/API | Four v1.5 flows plus the two affected original YAML/dialect and Hermes role-binding regressions passed |
+| iOS export | Hermes bundle and DOM reader exported; no native visual or IPA claim |
+
+The new browser flows cover independent GitLab/Hermes catalogs, rename/save/default isolation, empty-default guidance, squad/personal reassignment, pinned selection, separate daemon/disk readiness, keyboard operation, continuation of the same issue after a newer version is published, and idempotent repeat start. Squad quick creation carries the prompt into execution selection without a quick-create request. The creation body scrolls independently of its footer; the Create action stays fully visible at 390×844 and 390×500. Build reports are controlled test fixtures, not observations of a real daemon upgrade.
+
+Current captures live in `ui-evidence/v1.5/`: catalog at Desktop/390px, separate narrow editor, creation choice, quick-capture handoff, blocked daemon readiness with expanded identities, same-issue start, and dark result. Captures wait for the relevant data and finish CSS transitions. The parent directory contains historical v1.4 evidence.
 
 ## State and concurrency
 
@@ -21,9 +53,9 @@ Run controls require a known dialect, compiler v1 plan, node capabilities and ru
 
 The mobile client owns its requests, queries, mutations, realtime subscriptions and review input. It imports only shared types, pure schemas and utilities. Its request transport keeps bearer auth, workspace headers, timeout/abort forwarding, logging and 401 cleanup. Octet-stream repository material types are resolved from their fixed filenames; unsupported native formats provide an explicit Web route instead of a blank preview. The material reader uses the same transport rather than opening unauthenticated API URLs in the system browser.
 
-## Verification
+## Historical v1.4 verification
 
-Commands ran against an isolated managed development database and API, using source-built server and CLI. No installed agent CLI or paid agent was invoked. Pipeline E2E fixtures persist a completed/failed fake executor snapshot; compilation, configuration, artifact-content reads, document writes, decisions, retry and cancellation use real authenticated HTTP endpoints.
+The following records are retained from the previous v1.4 deliveries; they were not all repeated for v1.5. Commands ran against an isolated managed development database and API, using source-built server and CLI. No installed agent CLI or paid agent was invoked. Pipeline E2E fixtures persist a completed/failed fake executor snapshot; compilation, configuration, artifact-content reads, document writes, decisions, retry and cancellation use real authenticated HTTP endpoints.
 
 | Check | Result |
 | --- | --- |
@@ -61,4 +93,4 @@ Native device/simulator visual checks (keyboard, scrolling, themes, navigation a
 
 The D01 component probes use the actual shared view and schema-parsed API snapshots with mocked transport, not a server authorization-bypass test. Mobile reuses the tested pure policy and passed its own code checks; native press/rendering was not reproduced. YANF-9's later repocache single-package run of 114 passing cases does not resolve the historical concurrent full-suite EPERM failure.
 
-The UI PR depends on PR #6. It is stacked on that branch so review contains only the interface changes; retarget to main after the backend is integrated. Nothing in this delivery merges or deploys either PR.
+The former v1.4 UI PR #7 depended on backend PR #6. Both are historical. The new v1.5 UI branch is stacked on backend PR #8 (`agent/YANF-7-multiple-pipelines-v1.5`), so its review contains the new interface delta. Nothing in this delivery merges or deploys either branch.

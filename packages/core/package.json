@@ -178,7 +178,8 @@
     "./pipelines/utils": "./pipelines/utils.ts",
     "./documents/schema": "./documents/schema.ts",
     "./documents/associations": "./documents/associations.ts",
-    "./documents/links": "./documents/links.ts"
+    "./documents/links": "./documents/links.ts",
+    "./pipelines/execution": "./pipelines/execution.ts"
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "catalog:",

@@ -1,3 +1,4 @@
+vi.mock("@multica/core/realtime", () => ({useWSEvent: () => {}, useWSReconnect: () => {}}));
 import {
   cloneElement,
   forwardRef,
@@ -1727,7 +1728,8 @@ describe("CreateIssueModal", () => {
       "relative",
       "flex",
       "flex-1",
-      "min-h-0",
+      "min-h-20",
+      "shrink-0",
       "overflow-y-auto",
       "px-5",
     );

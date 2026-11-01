@@ -1,3 +1,4 @@
+vi.mock("@multica/core/realtime", () => ({useWSEvent: () => {}, useWSReconnect: () => {}}));
 // @vitest-environment jsdom
 // Store-backed lifecycle tests cover mode switches and parent-before-child
 // layout cleanup without mocking the draft store.

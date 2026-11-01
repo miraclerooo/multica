@@ -485,10 +485,11 @@ import enModals from "../locales/en/modals.json";
 import enEditor from "../locales/en/editor.json";
 import enProjects from "../locales/en/projects.json";
 import enIssues from "../locales/en/issues.json";
+import enSquads from "../locales/en/squads.json";
 import { AgentCreatePanel } from "./quick-create-issue";
 
 const TEST_RESOURCES = {
-  en: { common: enCommon, modals: enModals, editor: enEditor, projects: enProjects, issues: enIssues },
+  en: { common: enCommon, modals: enModals, editor: enEditor, projects: enProjects, issues: enIssues, squads: enSquads },
 };
 
 function renderPanel(props: React.ComponentProps<typeof AgentCreatePanel>) {
@@ -852,39 +853,27 @@ describe("AgentCreatePanel", () => {
     });
   });
 
-  // Picking a squad routes the submission through `squad_id` (not
-  // `agent_id`) so the backend can resolve the squad's leader agent and
-  // inject the squad-leader briefing on dispatch. The persisted preference
-  // remembers the actor type so the next open defaults back to the squad.
-  it("submits squad_id when the user picks a squad in the actor picker", async () => {
+  it.each(["button", "shortcut"])("hands a squad prompt to execution selection via %s without a quick-create request", async trigger => {
     mockSquadsData.list = [
       { id: "squad-1", name: "Frontend Squad", leader_id: "agent-1", archived_at: null },
     ];
     const user = userEvent.setup();
-    const onClose = vi.fn();
-
-    renderPanel({ onClose, isExpanded: false, setIsExpanded: vi.fn() });
-
-    // The picker mock renders both sections inline as buttons; click the
-    // squad row directly.
+    const onSwitchMode = vi.fn();
+    renderPanel({ onClose: vi.fn(), onSwitchMode, isExpanded: false, setIsExpanded: vi.fn() });
     await user.click(screen.getByRole("button", { name: /Frontend Squad/ }));
-
     const editor = screen.getByPlaceholderText(
       'Tell the agent what to do, e.g. "let Bohan fix the inbox loading slowness in the Web project"',
     );
     await user.clear(editor);
     await user.type(editor, "Investigate the regression");
-
-    await user.click(screen.getByRole("button", { name: /^Create$/i }));
-
-    await waitFor(() => {
-      expect(mockQuickCreateIssue).toHaveBeenCalledWith({
-        squad_id: "squad-1",
-        prompt: "Investigate the regression",
-        project_id: undefined,
-      });
-    });
-    expect(mockSetLastActor).toHaveBeenCalledWith("squad", "squad-1");
+    if (trigger === "button") await user.click(screen.getByRole("button", {name: enSquads.execution.manage}));
+    else fireEvent.keyDown(editor, {key:"Enter",metaKey:true});
+    await waitFor(() => expect(onSwitchMode).toHaveBeenCalledTimes(1));
+    expect(mockSetManual).toHaveBeenCalledWith({assigneeType:"squad",assigneeId:"squad-1"});
+    expect(mockSetManual).toHaveBeenCalledWith({description:"Investigate the regression"});
+    expect(mockSetAgent).toHaveBeenCalledWith({prompt:"Investigate the regression"});
+    expect(mockQuickCreateIssue).not.toHaveBeenCalled();
+    expect(mockCreateCommentSubIssue).not.toHaveBeenCalled();
   });
 
   // Squads whose leader agent isn't visible (archived, private, etc.) must

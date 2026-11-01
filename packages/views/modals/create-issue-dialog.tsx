@@ -122,6 +122,7 @@ function CreateIssueDialogBody({
   const [mode, setMode] = useState<CreateMode>(initialMode);
   const [panelData, setPanelData] = useState(data ?? null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const hasExecutionSelection = useIssueDraftStore(s => s.draft.manual.assigneeType === "squad" && !!s.draft.manual.assigneeId);
   const effectiveData = sourceContextData
     ? { ...(panelData ?? {}), ...sourceContextData }
     : panelData;
@@ -159,7 +160,7 @@ function CreateIssueDialogBody({
               : "!max-h-[80dvh] sm:!max-w-xl",
         )
       : cn(
-          manualDialogContentClass(isExpanded),
+          manualDialogContentClass(isExpanded, hasExecutionSelection),
           sourceContextExpanded && "!h-5/6",
         );
 

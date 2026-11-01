@@ -1,3 +1,9 @@
+import type { PipelineCatalog, PipelineCatalogCreateResult, PipelineDefinition, PipelineCapabilities } from "@multica/core/pipelines/schema";
+import type { IssueExecution } from "@multica/core/pipelines/execution";
+import { z } from "zod";
+import { CreateIssueResponseSchema } from "@multica/core/api/schemas";
+import { PipelineCatalogListSchema, PipelineCatalogSchema, PipelineCatalogCreateResultSchema, PipelineDefinitionSchema, PipelineDefinitionListSchema, PipelineCapabilitiesSchema, type PipelineCatalogCreateInput, type PipelineDefinitionInput } from "@multica/core/pipelines/schema";
+import { IssueExecutionSchema, type ExecutionSelection } from "@multica/core/pipelines/execution";
 import { publishedMaterialContentType } from "@multica/core/documents/links";
 import { PipelineRunSchema, PipelineRunListSchema, PipelineArtifactListSchema, type PipelineRun, type PipelineArtifact, type PipelineDecisionInput } from "@multica/core/pipelines/schema";
 import { DocumentCollectionSchema, type DocumentCollection } from "@multica/core/documents/associations";
@@ -132,6 +138,7 @@ import {
   SearchProjectsResponseSchema,
   SendChatMessageResponseSchema,
   SquadListSchema,
+  SquadSchema,
   TaskMessageListSchema,
   EMPTY_TASK_MESSAGE_LIST,
   UserSchema,
@@ -317,7 +324,7 @@ class ApiClient {
       const message =
         (body && typeof body === "object" && "message" in body
           ? String((body as { message: unknown }).message)
-          : null) ?? `${res.status} ${res.statusText}`;
+          : body && typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : null) ?? `${res.status} ${res.statusText}`;
 
       const level = res.status === 404 ? "warn" : "error";
       console[level](`[api] ← ${res.status} ${path}`, {
@@ -736,10 +743,63 @@ class ApiClient {
   // CreateIssue). Mobile sends only the fields the form fills in; backend
   // applies its own defaults for anything omitted.
   async createIssue(body: CreateIssueRequest): Promise<Issue> {
-    return this.fetch<Issue>("/api/issues", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
+    if (body.execution || body.idempotency_key) {
+      const caps = await this.getPipelineCapabilities();
+      if (caps.features.task_execution_selection !== true) throw new ApiError("Server does not support task execution selection", 422, {code: "unsupported_capability"});
+    }
+    const issue = await this.fetchValidatedWith<Issue | null>("/api/issues", CreateIssueResponseSchema, null, {method: "POST", body: JSON.stringify(body)});
+    if (!issue) throw new ApiError("Invalid issue response", 502);
+    const selection = body.execution;
+    if (selection && (!issue.execution || issue.execution.requested_mode !== selection.mode ||
+      (selection.mode === "pipeline" && (issue.execution.pipeline_id?.toLowerCase() !== selection.pipeline_id.toLowerCase() ||
+      (selection.definition_id && issue.execution.definition_id?.toLowerCase() !== selection.definition_id.toLowerCase()))))) {
+      throw new ApiError("Execution selection was not confirmed", 502, {code: "execution_snapshot_missing", issue_id: issue.id});
+    }
+    return issue;
+  }
+
+  getPipelineCapabilities(opts?: {signal?: AbortSignal}): Promise<PipelineCapabilities> {
+    return this.fetchValidated("/api/pipelines/capabilities", PipelineCapabilitiesSchema, {schema_version: 0, compiler_version: "", kinds: [], features: {}, limits: {}}, opts);
+  }
+  listPipelineCatalog(squadId: string, offset = 0, opts?: {signal?: AbortSignal}): Promise<{items: PipelineCatalog[]; limit: number; offset: number}> {
+    return this.fetchValidated(`/api/pipelines/catalog?squad_id=${encodeURIComponent(squadId)}&limit=100&offset=${offset}`, PipelineCatalogListSchema, {items: [], limit: 100, offset}, opts);
+  }
+  getPipelineDefinition(id: string, opts?: {signal?: AbortSignal}): Promise<PipelineDefinition | null> {
+    return this.fetchValidated(`/api/pipelines/definitions/${encodeURIComponent(id)}`, PipelineDefinitionSchema, null, opts);
+  }
+  listPipelineDefinitions(squadId: string, pipelineId: string, opts?: {signal?: AbortSignal}, offset = 0): Promise<{items: PipelineDefinition[]; limit: number; offset: number}> {
+    return this.fetchValidated(`/api/pipelines/definitions?squad_id=${encodeURIComponent(squadId)}&pipeline_id=${encodeURIComponent(pipelineId)}&limit=100&offset=${offset}`, PipelineDefinitionListSchema, {items: [], limit: 100, offset: 0}, opts);
+  }
+  async createPipelineCatalog(input: PipelineCatalogCreateInput): Promise<PipelineCatalogCreateResult> {
+    const result = await this.fetchValidatedWith<PipelineCatalogCreateResult | null>("/api/pipelines/catalog", PipelineCatalogCreateResultSchema, null, {method: "POST", body: JSON.stringify(input)});
+    if (!result) throw new ApiError("Invalid pipeline creation response", 502);
+    return result;
+  }
+  async createPipelineDefinition(input: PipelineDefinitionInput): Promise<PipelineDefinition> {
+    const result = await this.fetchValidatedWith<PipelineDefinition | null>("/api/pipelines/definitions", PipelineDefinitionSchema, null, {method: "POST", body: JSON.stringify(input)});
+    if (!result) throw new ApiError("Invalid pipeline version response", 502);
+    return result;
+  }
+  async renamePipelineCatalog(id: string, name: string, revision: number): Promise<PipelineCatalog> {
+    const result = await this.fetchValidatedWith<PipelineCatalog | null>(`/api/pipelines/catalog/${encodeURIComponent(id)}`, PipelineCatalogSchema, null, {method: "PATCH", body: JSON.stringify({name, expected_revision: revision})});
+    if (!result) throw new ApiError("Invalid pipeline rename response", 502);
+    return result;
+  }
+  async updateSquadPipeline(id: string, input: {instructions_mode?: "markdown" | "pipeline"; pipeline_id?: string; expected_revision?: number}): Promise<Squad> {
+    const result = await this.fetchValidatedWith<Squad | null>(`/api/squads/${encodeURIComponent(id)}`, SquadSchema, null, {method: "PUT", body: JSON.stringify(input)});
+    if (!result) throw new ApiError("Invalid squad response", 502);
+    return result;
+  }
+  preflightPipelineExecution(squadId: string, execution: ExecutionSelection, opts?: {signal?: AbortSignal}): Promise<IssueExecution | null> {
+    return this.fetchValidatedWith("/api/pipelines/preflight", IssueExecutionSchema, null, {method: "POST", body: JSON.stringify({squad_id: squadId, execution}), signal: opts?.signal});
+  }
+  getIssueExecution(id: string, opts?: {signal?: AbortSignal}): Promise<{execution: IssueExecution | null} | null> {
+    return this.fetchValidated(`/api/issues/${encodeURIComponent(id)}/execution`, z.object({execution: IssueExecutionSchema.nullable()}), null, opts);
+  }
+  async startIssueExecution(id: string): Promise<{execution: IssueExecution; run: PipelineRun}> {
+    const result = await this.fetchValidatedWith<{execution: IssueExecution; run: PipelineRun} | null>(`/api/issues/${encodeURIComponent(id)}/execution/start`, z.object({execution: IssueExecutionSchema, run: PipelineRunSchema}), null, {method: "POST", body: "{}"});
+    if (!result) throw new ApiError("Invalid execution start response", 502);
+    return result;
   }
 
   // Timeline returns the full ASC entry list in one shot — server-side
