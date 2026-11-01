@@ -297,6 +297,7 @@ func TestIssueExecutionConcurrentCreateAndInvalidSelectionZeroDispatch(t *testin
 		{"cross definition", map[string]any{"mode": "pipeline", "pipeline_id": a.Pipeline.ID, "definition_id": foreign.Definition.ID}, 404},
 		{"stale id", map[string]any{"mode": "pipeline", "pipeline_id": uuidToString(dbid.NewV7())}, 404},
 		{"invalid mode", map[string]any{"mode": "other"}, 422},
+		{"unknown version field", map[string]any{"mode": "pipeline", "pipeline_id": a.Pipeline.ID, "pipeline_definition_id": a.Definition.ID}, 400},
 		{"mismatched guidance", map[string]any{"mode": "markdown", "pipeline_id": a.Pipeline.ID}, 422},
 	}
 	before := dbfx.Count(t, "SELECT count(*) FROM issue WHERE workspace_id=$1", testWorkspaceID)

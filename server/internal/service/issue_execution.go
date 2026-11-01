@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
@@ -31,6 +32,19 @@ type ExecutionSelection struct {
 	Mode         string `json:"mode"`
 	PipelineID   string `json:"pipeline_id,omitempty"`
 	DefinitionID string `json:"definition_id,omitempty"`
+}
+
+// A misspelled version field must not silently select the latest version.
+func (s *ExecutionSelection) UnmarshalJSON(data []byte) error {
+	type selection ExecutionSelection
+	var decoded selection
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&decoded); err != nil {
+		return err
+	}
+	*s = ExecutionSelection(decoded)
+	return nil
 }
 
 type ExecutionPrincipal struct {

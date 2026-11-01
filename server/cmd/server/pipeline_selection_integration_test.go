@@ -67,6 +67,7 @@ func TestPipelineSelectionAuthenticatedHTTPWaitingAndResume(t *testing.T) {
 	if created.Definition.Source != source {
 		t.Fatal("original dialect changed")
 	}
+	call("POST", "/api/issues", testToken, map[string]any{"title": "Reject misspelled version", "assignee_type": "squad", "assignee_id": squad, "execution": map[string]any{"mode": "pipeline", "pipeline_id": created.Pipeline.ID, "pipeline_definition_id": created.Definition.ID}}, 400, nil)
 	old := protocol.RuntimeBuildReport{Daemon: protocol.BuildInfo{Version: "0.7.2-ipoke.3de828da5", Capabilities: []string{}, ReleaseChannel: "ipoke"}, DiskReason: "disk_probe_unavailable"}
 	call("POST", "/api/daemon/runtimes/"+runtime+"/build-report", testToken, old, 200, nil)
 	f.Exec(t, "UPDATE workspace SET issue_counter=GREATEST(issue_counter,(SELECT COALESCE(MAX(number),0) FROM issue WHERE workspace_id=$1)) WHERE id=$1", testWorkspaceID)
