@@ -9,7 +9,6 @@ import {
   documentKeys,
   documentStructure,
   editDocumentDraft,
-  insertDocumentBlock,
   putDocumentDraft,
   useCreateDocument,
   useDocumentDraftStore,
@@ -40,7 +39,6 @@ import {
   History,
   ListChecks,
   PanelRight,
-  Plus,
   Save,
   TriangleAlert,
   Users,
@@ -61,6 +59,7 @@ import { api } from "@multica/core/api";
 import { useConfigStore } from "@multica/core/config";
 import { useAppOrigin } from "../../navigation";
 import { DocumentSources } from "./document-sources";
+import { DocumentRelatedIssues } from "./document-related-issues";
 import { RevisionDiff, type DocumentComparison } from "./revision-diff";
 
 export function DocumentEditor({
@@ -319,14 +318,6 @@ export function DocumentEditor({
       );
     }
   };
-  const insert = (kind: "requirement" | "scenario" | "task") => {
-    flush();
-    const currentBody =
-      useDocumentDraftStore.getState().draft.drafts[key]?.body ?? doc.body;
-    const next = insertDocumentBlock(currentBody, kind);
-    richRef.current?.adoptContent(next);
-    edit({ body: next });
-  };
   const status = busy
     ? t(($) => $.documents.saving)
     : conflicted
@@ -348,6 +339,11 @@ export function DocumentEditor({
     .slice(0, 6);
   const sidebar = (
     <div className="p-4 space-y-5 text-caption">
+      <DocumentRelatedIssues
+        wsId={wsId}
+        projectId={project.id}
+        documentId={documentId}
+      />
       <DocumentSources wsId={wsId} projectId={project.id} documentId={documentId} />
       <section className="document-info-card">
         <h2>{t(($) => $.documents.details)}</h2>
@@ -507,28 +503,6 @@ export function DocumentEditor({
                     : t(($) => $.documents.source)}
               </Button>
             ))}
-          </div>
-          <div className="document-inserts flex items-center gap-1">
-            <Button
-              size="xs"
-              variant="ghost"
-              onClick={() => insert("requirement")}
-            >
-              <Plus />
-              {t(($) => $.documents.requirement)}
-            </Button>
-            <Button
-              size="xs"
-              variant="ghost"
-              onClick={() => insert("scenario")}
-            >
-              <Plus />
-              {t(($) => $.documents.scenario)}
-            </Button>
-            <Button size="xs" variant="ghost" onClick={() => insert("task")}>
-              <Plus />
-              {t(($) => $.documents.criterion)}
-            </Button>
           </div>
           <div className="document-save-actions ml-auto flex items-center gap-2">
             <span
@@ -746,7 +720,10 @@ export function DocumentEditor({
           </div>
         </div>
       </div>
-      <aside className="document-inspector hidden xl:block border-l bg-muted/15 overflow-y-auto">
+      <aside
+        className="document-inspector hidden xl:block border-l bg-muted/15 overflow-y-auto"
+        aria-label={t(($) => $.documents.details)}
+      >
         {sidebar}
       </aside>
       {materialPath && <PublishedMaterialDialog path={materialPath} onClose={() => setMaterialPath("")} renderMarkdown={text => <ReadonlyContent content={text} />} />}

@@ -215,6 +215,8 @@
     "tab": "Spec 및 문서",
     "issues": "태스크",
     "directory": "프로젝트 문서",
+    "related_issues": "관련 태스크",
+    "no_related_issues": "관련 태스크 없음",
     "search": "제목, REQ 또는 본문 검색…",
     "new": "새 문서",
     "specs": "핵심 사양",
