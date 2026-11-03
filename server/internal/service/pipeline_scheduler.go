@@ -183,6 +183,14 @@ func (s *PipelineService) Reconcile(ctx context.Context, row db.PipelineRun) err
 			if job.OwnerID == "" || job.NotifiedStatus == stamp || (job.Status != "waiting_approval" && job.Status != "failed" && job.Status != "blocked") {
 				continue
 			}
+			if _, e := q.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{UserID: pipelineUUID(job.OwnerID), WorkspaceID: row.WorkspaceID}); e != nil {
+				if !errors.Is(e, pgx.ErrNoRows) {
+					return e
+				}
+				job.OwnerNotificationReason = "owner_unavailable"
+				continue
+			}
+			job.OwnerNotificationReason = ""
 			details, _ := json.Marshal(map[string]any{"pipeline_run_id": run.ID, "job_id": job.Node.ID, "status": job.Status})
 			item, e := q.CreateInboxItem(ctx, db.CreateInboxItemParams{ID: dbid.NewV7(), WorkspaceID: row.WorkspaceID, RecipientType: "member", RecipientID: pipelineUUID(job.OwnerID), Type: "pipeline_job", Severity: "info", IssueID: row.IssueID, Title: job.Node.Title + ": " + job.Status, Body: pgtype.Text{String: job.Reason, Valid: job.Reason != ""}, ActorType: pgtype.Text{String: "system", Valid: true}, Details: details})
 			if e != nil && !errors.Is(e, pgx.ErrNoRows) {

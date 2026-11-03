@@ -1,5 +1,9 @@
 # Squad pipeline API and CLI (YANF-7)
 
+For human identities, stable agent selection, display names and multiline
+expected-file descriptions, see the [v1.7 contract](v1.7.md) and
+[verification record](v1.7-verification.md).
+
 For independent named pipelines, atomic task selection, environment readiness,
 release-channel configuration, and migration 613–618, see the
 [v1.5 contract](v1.5.md). The underlying v1.4 engine/document contract follows.

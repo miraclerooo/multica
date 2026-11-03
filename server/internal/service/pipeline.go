@@ -48,7 +48,20 @@ func (s *PipelineService) Bindings(ctx context.Context, q *db.Queries, squad db.
 		add := func(code, field, message string) {
 			diagnostics = append(diagnostics, pipeline.Diagnostic{Code: code, Severity: "error", Message: message, JobID: node.ID, Field: field, Location: node.Location})
 		}
-		if node.Owner != "" {
+		if node.OwnerUserID != "" {
+			id, e := util.ParseUUID(node.OwnerUserID)
+			if e == nil {
+				_, e = q.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{UserID: id, WorkspaceID: squad.WorkspaceID})
+				if e == nil {
+					_, e = q.GetUser(ctx, id)
+				}
+			}
+			if e != nil {
+				add("owner_unavailable", "owner_user_id", "human owner must be a current member of this workspace")
+			} else {
+				bindings["owner:"+node.ID] = util.UUIDToString(id)
+			}
+		} else if node.Owner != "" {
 			count := 0
 			for _, m := range members {
 				if m.MemberType == "member" && strings.EqualFold(strings.TrimSpace(m.Role), strings.TrimSpace(node.Owner)) {
@@ -66,7 +79,18 @@ func (s *PipelineService) Bindings(ctx context.Context, q *db.Queries, squad db.
 			continue
 		}
 		target := squad.LeaderID
-		if node.Role != "" {
+		if node.AgentID != "" {
+			found := false
+			for _, m := range members {
+				if m.MemberType == "agent" && util.UUIDToString(m.MemberID) == node.AgentID {
+					target, found = m.MemberID, true
+				}
+			}
+			if !found {
+				add("agent_not_in_squad", "agent_id", "selected agent must belong to this squad")
+				continue
+			}
+		} else if node.Role != "" {
 			matches := []pgtype.UUID{}
 			for _, m := range members {
 				if strings.EqualFold(strings.TrimSpace(m.Role), strings.TrimSpace(node.Role)) {

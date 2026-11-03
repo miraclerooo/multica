@@ -8,6 +8,7 @@ import type { PipelineDecisionInput, PipelineDefinitionInput, PipelineListInput,
 export const pipelineKeys = {
   all: (wsId: string) => ["pipelines", wsId] as const,
   capabilities: (wsId: string) => [...pipelineKeys.all(wsId), "capabilities"] as const,
+  candidates: (wsId: string, squadId: string, search: string) => [...pipelineKeys.all(wsId), "candidates", squadId, search] as const,
   catalog: (wsId: string, input: PipelineListInput) => [...pipelineKeys.all(wsId), "catalog", input] as const,
   catalogItem: (wsId: string, id: string) => [...pipelineKeys.all(wsId), "catalog", id] as const,
   execution: (wsId: string, issueId: string) => [...pipelineKeys.all(wsId), "execution", issueId] as const,
@@ -19,6 +20,7 @@ export const pipelineKeys = {
   artifacts: (wsId: string, id: string, input: PipelineListInput) => [...pipelineKeys.run(wsId, id), "artifacts", input] as const,
 };
 export const pipelineCapabilitiesOptions = (wsId: string) => queryOptions({ queryKey: pipelineKeys.capabilities(wsId), queryFn: () => api.getPipelineCapabilities() });
+export const pipelineCandidatesOptions = (wsId: string, squadId: string, search = "") => queryOptions({queryKey:pipelineKeys.candidates(wsId,squadId,search), queryFn:()=>api.getPipelineCandidates(squadId,search), enabled:!!squadId});
 export const pipelineCatalogOptions = (wsId: string, input: PipelineListInput) => queryOptions({queryKey: pipelineKeys.catalog(wsId, input), queryFn: () => api.listPipelineCatalog(input)});
 export const pipelineCatalogAllOptions = (wsId: string, squadId: string) => queryOptions({
   queryKey: [...pipelineKeys.catalog(wsId, {squad_id: squadId}), "all"],

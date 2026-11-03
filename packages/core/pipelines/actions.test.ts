@@ -63,7 +63,7 @@ it.each(["cancelled", "cancelling", "rejected"])("does not retry a %s run", (sta
 it.each([
   { field: "status", value: "future_policy_hold", code: "status" },
   { field: "kind", value: "future_yaml", code: "plan" },
-  { field: "compiler_version", value: "2", code: "plan" },
+  { field: "compiler_version", value: "future", code: "plan" },
   { field: "node_type", value: "future_gate", code: "plan" },
   { field: "when", value: "future_condition", code: "plan" },
   { field: "when", value: "always", code: "plan" },

@@ -100,8 +100,8 @@ func (h *Handler) AssociateIssueDocument(w http.ResponseWriter, r *http.Request)
 		writeError(w, 400, "invalid request body")
 		return
 	}
-	if in.IdempotencyKey == "" || len(in.IdempotencyKey) > 200 || (in.DocumentID == "") == (in.CreateDocument == nil) || utf8.RuneCountInString(in.Label) > 300 || len(in.Description) > 2000 {
-		writeError(w, 400, "choose document_id or create_document and provide an idempotency_key; label must be at most 300 characters and description at most 2000 bytes")
+	if in.IdempotencyKey == "" || len(in.IdempotencyKey) > 200 || (in.DocumentID == "") == (in.CreateDocument == nil) || utf8.RuneCountInString(in.Label) > 300 || len(in.Description) > 262144 {
+		writeError(w, 400, "choose document_id or create_document and provide an idempotency_key; label must be at most 300 characters and description at most 256 KiB")
 		return
 	}
 	var docID pgtype.UUID

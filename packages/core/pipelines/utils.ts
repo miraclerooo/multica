@@ -16,12 +16,13 @@ type PipelineWriteRestriction = {
 };
 
 // Keep unfamiliar snapshots readable, but never infer write semantics from
-// the absence of a known terminal state. These actions match compiler v1.
+// the absence of a known terminal state. Compiler 2 adds metadata and stable
+// identities; scheduling states and approval permissions retain v1 semantics.
 export function pipelineRunActions(run: PipelineRun, job?: PipelineJob) {
   let restriction: PipelineWriteRestriction | null = null;
   if (!["gitlab_yaml", "hermes_yaml"].includes(run.plan.kind)) {
     restriction = { code: "plan", value: run.plan.kind };
-  } else if (run.plan.compiler_version !== "1") {
+  } else if (!["1", "2"].includes(run.plan.compiler_version)) {
     restriction = { code: "plan", value: `compiler_version=${run.plan.compiler_version}` };
   } else if (!knownRunStatuses.has(run.status)) {
     restriction = { code: "status", value: run.status };
@@ -68,14 +69,15 @@ export function bindPipelineRole(
 ): string {
   const doc = parseDocument(source);
   if (doc.errors.length) throw doc.errors[0];
+  if (node.type === "manual") throw new Error("Manual gates do not bind an executor");
   if (pipelineSourceKind(source) === "hermes_yaml") {
-    if (node.type === "manual")
-      throw new Error("Manual gates do not bind an executor");
+    doc.deleteIn(["states",node.source_id,"agent_id"]);
     if (role) {
       if (!doc.hasIn(["roles", role])) doc.setIn(["roles", role], {});
       doc.setIn(["states", node.source_id, "by"], role);
     } else doc.deleteIn(["states", node.source_id, "by"]);
   } else {
+    doc.deleteIn([node.source_id,"agent_id"]);
     doc.setIn([node.source_id, "tags"], role ? [role] : []);
   }
   return doc.toString();

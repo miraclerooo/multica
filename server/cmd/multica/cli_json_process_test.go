@@ -58,6 +58,7 @@ func TestPipelineJSONErrorProcess(t *testing.T) {
 	const definitionError = `{"code":"definition_not_owned","error":"Definition must belong to this squad"}`
 	const approvalConflict = `{"code":"revision_conflict","error":"Node revision changed","revision":7}`
 	largeConflict := fmt.Sprintf(`{"code":"document_version_conflict","error":"Document changed","latest":{"body":%q,"version":6}}`, strings.Repeat("x", 8192))
+	metadataSource := "# Entire original source.\nkind: gitlab_yaml\nstages: [work]\nstable:\n  stage: work\n  title: Display name\n  agent_id: " + id + "\n  instructions: |\n    Full instruction.\n    Keep this.\n  artifacts:\n    files:\n      - name: report.md\n        description: |+\n          First.\n\n          Second.\n\n"
 
 	cases := []struct {
 		name    string
@@ -72,6 +73,14 @@ func TestPipelineJSONErrorProcess(t *testing.T) {
 		method  string
 		request string
 	}{
+		{name: "v17_original_yaml", args: []string{"pipeline", "get", id, "--output=yaml"}, status: 200, body: fmt.Sprintf(`{"source":%q}`, metadataSource), stdout: "yaml", path: "/api/pipelines/definitions/" + id, method: "GET"},
+		{name: "v17_association_multiline_description", args: append(associate("json"), "--description", "  First.\n\nSecond.\n\n"), status: 200, body: `{"document":{"id":"doc","version":6},"inserted":true}`, stdout: "json", path: "/api/issues/PROJ-7/documents", method: "POST", request: fmt.Sprintf(`{"document_id":%q,"base_version":5,"idempotency_key":"one","description":"  First.\n\nSecond.\n\n"}`, id)},
+		{name: "v17_source_submission", args: []string{"pipeline", "create", "-", "--squad", id, "--idempotency-key", "paragraphs"}, status: 201, body: `{"id":"definition","compiler_version":"2"}`, stdout: "json", path: "/api/pipelines/definitions", method: "POST"},
+		{name: "v17_candidates", args: []string{"pipeline", "candidates", "--squad", id, "--search", "No role", "--output=json"}, status: 200, body: `{"current_user":{"user_id":"human","name":"Admin"},"agents":[{"agent_id":"agent","role":""}]}`, stdout: "json", path: "/api/pipelines/candidates", method: "GET"},
+		{name: "v17_candidates_missing_squad", args: []string{"pipeline", "candidates", "--output=json"}, exit: 1, code: "pipeline_command_failed"},
+		{name: "v17_candidates_forbidden", args: []string{"pipeline", "candidates", "--squad", id}, status: 403, body: `{"code":"approval_forbidden","error":"Authenticated human required"}`, exit: 1, code: "approval_forbidden", path: "/api/pipelines/candidates", method: "GET"},
+		{name: "v17_invalid_owner", args: []string{"pipeline", "create", "-", "--squad", id, "--idempotency-key", "metadata"}, status: 422, body: `{"code":"owner_unavailable","error":"Owner is unavailable","latest":{"revision":3}}`, exit: 1, code: "owner_unavailable", path: "/api/pipelines/definitions", method: "POST"},
+		{name: "v17_definition_fields", args: []string{"pipeline", "get", id}, status: 200, body: `{"id":"definition","plan":{"nodes":[{"id":"stable","title":"Friendly name","agent_id":"agent","deliverables":[{"path":"reports/report.md","name":"report.md","description":"First.\n\nSecond.\n"}]}]}}`, stdout: "json", path: "/api/pipelines/definitions/" + id, method: "GET"},
 		{name: "association_conflict", args: associate("json"), status: 409, body: documentConflict, exit: 1, code: "document_version_conflict"},
 		{name: "association_default_json", args: associate(""), status: 409, body: documentConflict, exit: 1, code: "document_version_conflict"},
 		{name: "association_large_latest", args: associate("json"), status: 409, body: largeConflict, exit: 1, code: "document_version_conflict"},
@@ -173,6 +182,17 @@ func TestPipelineJSONErrorProcess(t *testing.T) {
 				if tc.path != "" && (r.URL.Path != tc.path || r.Method != tc.method) {
 					t.Errorf("wrong request %s %s", r.Method, r.URL)
 				}
+				if tc.name == "v17_candidates" && (r.URL.Query().Get("squad_id") != id || r.URL.Query().Get("search") != "No role") {
+					t.Error("candidate query identity/search changed")
+				}
+				if tc.name == "v17_source_submission" {
+					var input struct {
+						Source string `json:"source"`
+					}
+					if e := json.NewDecoder(r.Body).Decode(&input); e != nil || input.Source != metadataSource {
+						t.Errorf("CLI changed multiline source: %q %v", input.Source, e)
+					}
+				}
 				if tc.request != "" {
 					var got, want any
 					if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
@@ -202,6 +222,9 @@ func TestPipelineJSONErrorProcess(t *testing.T) {
 			}
 			cmd.Env = append(cmd.Env, "MULTICA_SERVER_URL="+server.URL, "MULTICA_TOKEN=mat_process_fake", "MULTICA_WORKSPACE_ID="+project, cli.TaskConfigRootEnv+"="+filepath.Join(cmd.Dir, "config"), "LANG=C", "LC_ALL=C")
 			cmd.Stdin = strings.NewReader("kind: gitlab_yaml\nstages: [custom]\nwork: {stage: custom, instructions: Preserve me.}\n")
+			if tc.name == "v17_source_submission" {
+				cmd.Stdin = strings.NewReader(metadataSource)
+			}
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout, cmd.Stderr = &stdout, &stderr
 			err := cmd.Run()
@@ -236,8 +259,24 @@ func TestPipelineJSONErrorProcess(t *testing.T) {
 				return
 			}
 			if exit == 0 {
+				if tc.stdout == "yaml" {
+					if stderr.Len() != 0 || stdout.String() != metadataSource {
+						t.Fatal("CLI YAML source changed original text or polluted streams")
+					}
+					return
+				}
 				if stderr.Len() != 0 || !json.Valid(stdout.Bytes()) {
 					t.Fatalf("success streams: stdout=%.200s stderr=%.200s", stdout.String(), stderr.String())
+				}
+				if strings.HasPrefix(tc.name, "v17_") && tc.body != "" {
+					var got, want any
+					_ = json.Unmarshal(stdout.Bytes(), &got)
+					_ = json.Unmarshal([]byte(tc.body), &want)
+					a, _ := json.Marshal(got)
+					b, _ := json.Marshal(want)
+					if !bytes.Equal(a, b) {
+						t.Fatal("CLI lost metadata or paragraph content")
+					}
 				}
 				if tc.name == "failed_run_query_control" && !strings.Contains(stdout.String(), `"status": "failed"`) {
 					t.Fatal("failed run state changed")
