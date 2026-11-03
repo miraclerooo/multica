@@ -37,15 +37,19 @@ export class CanvasEditError extends Error {
   }
 }
 const strings = z.array(z.string());
-const artifacts = z.object({ paths: strings.default([]) }).strict();
+const deliverableSchema = z.object({name:z.string(), path:z.string().optional(), description:z.string().default("")}).strict();
+const artifacts = z.object({ paths: strings.default([]), files:z.array(deliverableSchema).default([]) }).strict();
 const executionFields = {
   owner: z.string().default(""),
+  owner_user_id:z.uuid().optional(),
+  agent_id:z.uuid().optional(),
   retry: z.number().int().min(0).max(10).default(0),
   allow_failure: z.boolean().default(false),
   artifacts: artifacts.optional(),
 };
 const jobSchema = z
   .object({
+    title:z.string().default(""),
     stage: z.string().default(""),
     instructions: z.string().default(""),
     tags: strings.max(1).optional(),
@@ -77,7 +81,7 @@ const hermesSchema = z
       .record(
         z.string(),
         z
-          .object({ type: z.literal("manual"), owner: z.string().default("") })
+          .object({ type: z.literal("manual"), owner: z.string().default(""), owner_user_id:z.uuid().optional(), title:z.string().optional() })
           .strict(),
       )
       .default({}),
@@ -106,6 +110,9 @@ export interface CanvasNode {
   instructions: string;
   role: string;
   owner: string;
+  agentId?:string;
+  ownerUserId?:string;
+  deliverables?:CanvasDeliverable[];
   when: "on_success" | "on_failure" | "manual";
   retry: number;
   allowFailure: boolean;
@@ -113,6 +120,7 @@ export interface CanvasNode {
   output: string;
   exitCheck: string;
 }
+export interface CanvasDeliverable {path:string; name:string; description:string}
 export type CanvasEdgeKind =
   | "needs"
   | "stage"
@@ -140,6 +148,9 @@ export type NodeFields = Partial<
     | "instructions"
     | "role"
     | "owner"
+    | "agentId"
+    | "ownerUserId"
+    | "deliverables"
     | "when"
     | "retry"
     | "allowFailure"
@@ -152,7 +163,7 @@ export type CanvasCommand =
   | {
       type: "add_node";
       nodeType: "agent" | "manual";
-      fields: NodeFields & { id: string };
+      fields: NodeFields;
     }
   | { type: "update_node"; id: string; fields: NodeFields }
   | { type: "delete_node"; id: string }
@@ -181,6 +192,18 @@ const edge = (kind: CanvasEdgeKind, from: string, to: string): CanvasEdge => ({
   to,
 });
 const gateNodeId = (state: string, gate: string) => `${state}.gate.${gate}`;
+function deliveryFields(value: z.infer<typeof artifacts> | undefined) {
+  const deliverables:CanvasDeliverable[] = [
+    ...(value?.paths ?? []).map(path=>({path,name:path.split("/").at(-1)!,description:""})),
+    ...(value?.files ?? []).map(d=>({path:d.path || d.name,name:d.name,description:d.description})),
+  ];
+  return {paths:deliverables.map(d=>d.path),deliverables};
+}
+
+export function nextCanvasNodeId(model:CanvasDocument):string {
+  const used = new Set(model.nodes.flatMap(n=>[n.id,n.sourceId,n.gateId ?? ""]));
+  for(let n=1; ;n++) if(!used.has(`node_${n}`)) return `node_${n}`;
+}
 function document(source: string) {
   const doc = parseDocument(
     source.trim() ? source : "kind: gitlab_yaml\nstages: []\n",
@@ -237,22 +260,23 @@ export function readCanvasDocument(source: string): CanvasDocument {
       for (const [id, j] of jobs) {
         if (
           j.when === "manual" &&
-          ((j.tags?.length ?? 0) > 0 || j.retry || j.artifacts?.paths.length)
+          ((j.tags?.length ?? 0) > 0 || j.agent_id || j.retry || deliveryFields(j.artifacts).paths.length)
         )
           throw new CanvasEditError("manual", id);
         nodes.push({
           id,
           sourceId: id,
           type: j.when === "manual" ? "manual" : "agent",
-          title: id,
+          title: j.title || id,
           stage: j.stage,
           instructions: j.instructions,
           role: j.tags?.[0] ?? "",
           owner: j.owner,
+          agentId:j.agent_id, ownerUserId:j.owner_user_id,
           when: j.when,
           retry: j.retry,
           allowFailure: j.allow_failure,
-          paths: j.artifacts?.paths ?? [],
+          ...deliveryFields(j.artifacts),
           output: "",
           exitCheck: "",
         });
@@ -286,10 +310,11 @@ export function readCanvasDocument(source: string): CanvasDocument {
           instructions: s.entry,
           role: s.by,
           owner: s.owner,
+          agentId:s.agent_id, ownerUserId:s.owner_user_id,
           when: "on_success",
           retry: s.retry,
           allowFailure: s.allow_failure,
-          paths: s.artifacts?.paths ?? [],
+          ...deliveryFields(s.artifacts),
           output: fieldSource(doc, ["states", id, "output"]),
           exitCheck: fieldSource(doc, ["states", id, "exit_check"]),
         });
@@ -303,11 +328,12 @@ export function readCanvasDocument(source: string): CanvasDocument {
             sourceId: id,
             gateId: s.gate,
             type: "manual",
-            title: s.gate,
+            title: g.title || s.gate,
             stage: id,
             instructions: "",
             role: "",
             owner: g.owner,
+            ownerUserId:g.owner_user_id,
             when: "manual",
             retry: 0,
             allowFailure: false,
@@ -330,6 +356,10 @@ export function readCanvasDocument(source: string): CanvasDocument {
         ),
       );
     } else throw new CanvasEditError("kind", kind);
+    for(const n of nodes) {
+      if((n.agentId && n.role) || (n.ownerUserId && n.owner)) throw new CanvasEditError("mapping","ambiguous identity");
+      checkDeliverables(n.deliverables ?? []);
+    }
     if (new Set(nodes.map((n) => n.id)).size !== nodes.length)
       throw new CanvasEditError(
         "mapping",
@@ -362,7 +392,7 @@ export function canvasCapabilityRestriction(
   if (
     !caps ||
     caps.schema_version !== 1 ||
-    caps.compiler_version !== "1" ||
+    !["1", "2"].includes(caps.compiler_version) ||
     !caps.kinds.includes(kind) ||
     caps.features.custom_nodes !== true ||
     caps.features.manual_gates !== true ||
@@ -374,6 +404,10 @@ export function canvasCapabilityRestriction(
   )
     return "capability";
   return null;
+}
+
+export function canvasMetadataCapabilityRestriction(caps:PipelineCapabilities | undefined):string | null {
+  return caps?.compiler_version === "2" && ["human_owner_identity","stable_agent_binding","node_display_names","deliverable_descriptions"].every(key=>caps.features[key]===true) ? null : "capability";
 }
 function mapAt(doc: ReturnType<typeof document>, path: string[]): YAMLMap {
   const node = path.length ? doc.getIn(path, true) : doc.contents;
@@ -456,6 +490,10 @@ function checkPaths(paths: string[]) {
   )
     throw new CanvasEditError("paths");
 }
+function checkDeliverables(files:CanvasDeliverable[]) {
+  checkPaths(files.map(d=>d.path));
+  if(new Set(files.map(d=>d.path)).size!==files.length || files.some(d=>!d.name.trim() || /[/\\\r\n]/.test(d.name) || d.name.includes(String.fromCharCode(0)) || [".",".."].includes(d.name))) throw new CanvasEditError("paths");
+}
 function writeFields(
   doc: ReturnType<typeof document>,
   kind: string,
@@ -471,8 +509,10 @@ function writeFields(
   if (
     node.type === "manual" &&
     (fields.role ||
+      fields.agentId ||
       fields.retry ||
       fields.paths?.length ||
+      fields.deliverables?.length ||
       fields.output ||
       fields.exitCheck)
   )
@@ -493,11 +533,7 @@ function writeFields(
     addStage(doc, fields.stage);
     doc.setIn([...path, "stage"], fields.stage);
   }
-  if (
-    kind === "hermes_yaml" &&
-    node.type === "agent" &&
-    fields.title !== undefined
-  )
+  if (fields.title !== undefined)
     doc.setIn([...path, "title"], fields.title);
   if (
     fields.instructions !== undefined &&
@@ -507,9 +543,28 @@ function writeFields(
       [...path, kind === "gitlab_yaml" ? "instructions" : "entry"],
       fields.instructions,
     );
-  if (fields.role !== undefined && node.type === "agent")
+  if (fields.role !== undefined && node.type === "agent") {
     setRole(doc, kind, node.sourceId, fields.role);
-  if (fields.owner !== undefined) doc.setIn([...path, "owner"], fields.owner);
+    if (fields.role || fields.agentId === undefined) doc.deleteIn([...path,"agent_id"]);
+  }
+  if (fields.agentId !== undefined) {
+    if(fields.agentId) {
+      doc.setIn([...path,"agent_id"],z.uuid().parse(fields.agentId));
+      setRole(doc,kind,node.sourceId,"");
+    } else doc.deleteIn([...path,"agent_id"]);
+  }
+  if(fields.role && fields.agentId) throw new CanvasEditError("mapping","ambiguous executor");
+  if (fields.owner !== undefined) {
+    doc.setIn([...path, "owner"], fields.owner);
+    if(fields.owner) doc.deleteIn([...path,"owner_user_id"]);
+  }
+  if(fields.ownerUserId !== undefined) {
+    if(fields.ownerUserId) {
+      doc.setIn([...path,"owner_user_id"],z.uuid().parse(fields.ownerUserId));
+      doc.deleteIn([...path,"owner"]);
+    } else doc.deleteIn([...path,"owner_user_id"]);
+  }
+  if(fields.owner && fields.ownerUserId) throw new CanvasEditError("mapping","ambiguous owner");
   if (
     fields.allowFailure !== undefined &&
     (kind === "gitlab_yaml" || node.type === "agent")
@@ -517,8 +572,14 @@ function writeFields(
     doc.setIn([...path, "allow_failure"], fields.allowFailure);
   if (node.type === "agent") {
     if (fields.retry !== undefined) doc.setIn([...path, "retry"], fields.retry);
-    if (fields.paths !== undefined)
+    if (fields.deliverables !== undefined) {
+      checkDeliverables(fields.deliverables);
+      doc.setIn([...path,"artifacts","files"],doc.createNode(fields.deliverables));
+      doc.deleteIn([...path,"artifacts","paths"]);
+    } else if (fields.paths !== undefined && JSON.stringify(fields.paths)!==JSON.stringify(node.paths)) {
+      if (doc.hasIn([...path,"artifacts","files"])) throw new CanvasEditError("paths","edit deliverables to preserve descriptions");
       doc.setIn([...path, "artifacts", "paths"], doc.createNode(fields.paths));
+    }
     if (kind === "gitlab_yaml" && fields.when !== undefined) {
       if (!["on_success", "on_failure"].includes(fields.when))
         throw new CanvasEditError("manual");
@@ -608,7 +669,7 @@ export function applyCanvasEdit(
   let selected: string | undefined;
   if (command.type === "add_node") {
     const f = command.fields,
-      id = f.id;
+      id = f.id ?? nextCanvasNodeId(model);
     checkId(id, kind);
     if (
       kind === "gitlab_yaml"
@@ -628,6 +689,8 @@ export function applyCanvasEdit(
         doc.createNode({
           type: "manual",
           ...(f.owner ? { owner: f.owner } : {}),
+          ...(f.ownerUserId ? {owner_user_id:z.uuid().parse(f.ownerUserId)} : {}),
+          ...(f.title ? {title:f.title} : {}),
         }),
       );
       doc.setIn(["states", parent.sourceId, "gate"], id);

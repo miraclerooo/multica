@@ -164,6 +164,12 @@ func (h *Handler) resolveDocumentSource(ctx context.Context, q *db.Queries, issu
 		out.DocumentSource = DocumentSource{Kind: source.Kind, RunID: util.UUIDToString(id), JobID: source.JobID, Attempt: source.Attempt, Path: source.Path}
 		if out.Label == "" {
 			out.Label = source.Path
+			if out.Artifact.Name != "" {
+				out.Label = out.Artifact.Name
+			}
+		}
+		if out.Description == "" {
+			out.Description = out.Artifact.Description
 		}
 	case "repository":
 		if source.AttachmentID != "" || source.DocumentID != "" || source.RunID != "" || source.URL != "" || source.Repo == "" || source.SHA == "" || source.Path == "" || h.Pipelines.RepositoryFile == nil {
@@ -197,7 +203,13 @@ func (h *Handler) resolveDocumentSource(ctx context.Context, q *db.Queries, issu
 	}
 	out.Markdown = "[" + markdownLinkText(out.Label) + "](<" + out.Href + ">)"
 	if out.Description != "" {
-		out.Markdown += " — " + markdownLinkText(out.Description)
+		if strings.ContainsAny(out.Description, "\r\n") {
+			// Escape prose without flattening intentional lines and paragraphs.
+			text := strings.NewReplacer("\\", "\\\\", "[", "\\[", "]", "\\]", "<", "\\<", ">", "\\>", "*", "\\*", "_", "\\_", "`", "\\`", "#", "\\#", "!", "\\!", "|", "\\|").Replace(out.Description)
+			out.Markdown += "\n\n" + strings.ReplaceAll(text, "\n", "  \n")
+		} else {
+			out.Markdown += " — " + markdownLinkText(out.Description)
+		}
 	}
 	if !out.Verified {
 		out.Markdown += " (external URL; content unverified)"

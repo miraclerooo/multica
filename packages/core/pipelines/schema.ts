@@ -11,6 +11,8 @@ export const PipelineNodeSchema = LocationSchema.extend({
   id: z.string(), source_id: z.string(), title: z.string().default(""), type: z.string(),
   stage: z.string().default(""), instructions: z.string().default(""), role: z.string().default(""),
   owner: z.string().default(""), needs: z.array(z.string()), artifact_sources: z.array(z.string()),
+	owner_user_id: z.string().optional(), agent_id: z.string().optional(),
+	deliverables: z.array(z.object({path:z.string(), name:z.string(), description:z.string().default("")}).loose()).default([]),
   paths: z.array(z.string()), when: z.string(), allow_failure: z.boolean(), retry: z.number().int().nonnegative(),
   output: z.unknown().optional(), exit_check: z.unknown().optional(),
 }).loose();
@@ -33,6 +35,7 @@ export const PipelineDefinitionSchema = z.object({
   plan: PipelinePlanSchema, creator_id: z.string(), created_at: z.string(),
 }).loose();
 export const PipelineArtifactSchema = z.object({
+	name: z.string().optional(), description: z.string().optional(),
   id: z.string(), job_id: z.string(), attempt: z.number(), path: z.string(), status: z.string(),
   document_id: z.string().optional(), document_version: z.number().int().positive().optional(),
   attachment_id: z.string().optional(), repo: z.string().optional(), ref: z.string().optional(), sha: z.string().optional(), reason: z.string().optional(),
@@ -51,6 +54,7 @@ export const PipelineDecisionSchema = z.object({
   materials: z.array(PipelineArtifactSchema), created_at: z.string(),
 }).loose();
 export const PipelineJobSchema = z.object({
+	owner_id: z.string().optional(), owner_notification_reason: z.string().optional(),
   node: PipelineNodeSchema, status: z.string(), reason: z.string(), revision: z.number(), executor_id: z.string(),
   attempts: z.array(PipelineAttemptSchema), decision: PipelineDecisionSchema.nullable(),
 }).loose();
@@ -95,3 +99,11 @@ export interface PipelineRevisionInput { expected_revision: number; idempotency_
 export interface PipelineDecisionInput extends PipelineRevisionInput { decision: "approve" | "reject"; reason?: string }
 export interface PipelineReportInput { attempt: number; result: "succeeded" | "failed" | "blocked"; report: string; artifacts: { path: string; attachment_id?: string; document_id?: string; document_version?: number; repo?: string; ref?: string; sha?: string }[]; idempotency_key: string }
 export interface PipelineListInput { issue_id?: string; squad_id?: string; pipeline_id?: string; job_id?: string; limit?: number; offset?: number }
+
+const PipelineHumanCandidateSchema = z.object({user_id:z.string(), member_id:z.string(), name:z.string()}).loose();
+export const PipelineCandidatesSchema = z.object({
+  squad_id:z.string(), current_user:PipelineHumanCandidateSchema, default_owner_user_id:z.string(), leader_id:z.string(),
+  humans:z.array(PipelineHumanCandidateSchema),
+  agents:z.array(z.object({agent_id:z.string(), name:z.string(), role:z.string().default(""), can_invoke:z.boolean(), reason:z.string().default(""), is_leader:z.boolean().default(false)}).loose()),
+}).loose();
+export type PipelineCandidates = z.infer<typeof PipelineCandidatesSchema>;

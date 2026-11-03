@@ -4812,6 +4812,12 @@ export class ApiClient {
     const endpoint = "/api/pipelines/capabilities";
     return parseWithFallback(await this.fetch<unknown>(endpoint), pipelines.PipelineCapabilitiesSchema, pipelines.EMPTY_PIPELINE_CAPABILITIES, { endpoint });
   }
+  async getPipelineCandidates(squadId: string, search = ""): Promise<pipelines.PipelineCandidates | null> {
+    const params = new URLSearchParams({squad_id:squadId});
+    if (search) params.set("search", search);
+    const endpoint = `/api/pipelines/candidates?${params}`;
+    return parseWithFallback<pipelines.PipelineCandidates | null>(await this.fetch<unknown>(endpoint), pipelines.PipelineCandidatesSchema, null, {endpoint});
+  }
   async listPipelineCatalog(input: pipelines.PipelineListInput) {
     const endpoint = `/api/pipelines/catalog?${this.pipelineSearch(input)}`;
     return parseWithFallback(await this.fetch<unknown>(endpoint), pipelines.PipelineCatalogListSchema, {items: [], limit: 50, offset: 0}, {endpoint});

@@ -30,6 +30,10 @@ func newPipelineCommand() *cobra.Command {
 		return cmd
 	}
 	add(root, "capabilities", "capabilities", 0)
+	candidates := add(root, "candidates", "candidates", 0)
+	candidates.Flags().String("squad", "", "Owning squad ID (required)")
+	candidates.Flags().String("search", "", "Filter candidate display names")
+	_ = candidates.MarkFlagRequired("squad")
 	validate := add(root, "validate <file|->", "validate", 1)
 	validate.Flags().String("squad", "", "Check the referenced roles in this squad")
 	create := add(root, "create <file|->", "create", 1)
@@ -167,6 +171,12 @@ func runPipeline(cmd *cobra.Command, args []string, op string) error {
 		endpoint = "/api/pipeline-runs/" + url.PathEscape(args[0]) + "/jobs/" + url.PathEscape(args[1])
 	}
 	switch op {
+	case "candidates":
+		endpoint = "/api/pipelines/candidates"
+		q.Set("squad_id", pipelineFlag(cmd, "squad"))
+		if search := pipelineFlag(cmd, "search"); search != "" {
+			q.Set("search", search)
+		}
 	case "catalog create":
 		source, e := pipelineFile(cmd, args[0])
 		if e != nil {

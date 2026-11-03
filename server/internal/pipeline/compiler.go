@@ -11,10 +11,17 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
-const CompilerVersion = "1"
+const CompilerVersion = "2"
+
+type Deliverable struct {
+	Path        string `json:"path"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
 
 type Location struct {
 	Line   int `json:"line"`
@@ -32,22 +39,25 @@ type Diagnostic struct {
 }
 
 type Node struct {
-	ID              string   `json:"id"`
-	SourceID        string   `json:"source_id"`
-	Title           string   `json:"title"`
-	Type            string   `json:"type"`
-	Stage           string   `json:"stage"`
-	Instructions    string   `json:"instructions"`
-	Role            string   `json:"role"`
-	Owner           string   `json:"owner"`
-	Needs           []string `json:"needs"`
-	ArtifactSources []string `json:"artifact_sources"`
-	Paths           []string `json:"paths"`
-	When            string   `json:"when"`
-	AllowFailure    bool     `json:"allow_failure"`
-	Retry           int      `json:"retry"`
-	Output          any      `json:"output,omitempty"`
-	ExitCheck       any      `json:"exit_check,omitempty"`
+	ID              string        `json:"id"`
+	SourceID        string        `json:"source_id"`
+	Title           string        `json:"title"`
+	Type            string        `json:"type"`
+	Stage           string        `json:"stage"`
+	Instructions    string        `json:"instructions"`
+	Role            string        `json:"role"`
+	Owner           string        `json:"owner"`
+	AgentID         string        `json:"agent_id,omitempty"`
+	OwnerUserID     string        `json:"owner_user_id,omitempty"`
+	Deliverables    []Deliverable `json:"deliverables,omitempty"`
+	Needs           []string      `json:"needs"`
+	ArtifactSources []string      `json:"artifact_sources"`
+	Paths           []string      `json:"paths"`
+	When            string        `json:"when"`
+	AllowFailure    bool          `json:"allow_failure"`
+	Retry           int           `json:"retry"`
+	Output          any           `json:"output,omitempty"`
+	ExitCheck       any           `json:"exit_check,omitempty"`
 	Location
 }
 
@@ -71,7 +81,7 @@ func Capabilities() map[string]any {
 	return map[string]any{
 		"schema_version": 1, "compiler_version": CompilerVersion,
 		"kinds":    []string{"gitlab_yaml", "hermes_yaml"},
-		"features": map[string]bool{"pipeline_catalog": true, "task_execution_selection": true, "runtime_compatibility": true, "waiting_runtime_resume": true, "custom_roles": true, "custom_nodes": true, "gitlab_dag": true, "hermes_forward_chain": true, "manual_gates": true, "on_failure": true, "allow_failure": true, "retry": true, "attachment_artifacts": true, "repository_artifacts": true, "document_artifacts": true, "markdown_document_associations": true, "dialect_conversion": false, "conditional_routes": false, "rollback": false, "named_outputs": false, "artifact_globs": false, "run_only": false},
+		"features": map[string]bool{"human_owner_identity": true, "stable_agent_binding": true, "node_display_names": true, "deliverable_descriptions": true, "pipeline_catalog": true, "task_execution_selection": true, "runtime_compatibility": true, "waiting_runtime_resume": true, "custom_roles": true, "custom_nodes": true, "gitlab_dag": true, "hermes_forward_chain": true, "manual_gates": true, "on_failure": true, "allow_failure": true, "retry": true, "attachment_artifacts": true, "repository_artifacts": true, "document_artifacts": true, "markdown_document_associations": true, "dialect_conversion": false, "conditional_routes": false, "rollback": false, "named_outputs": false, "artifact_globs": false, "run_only": false},
 		"limits":   map[string]int{"source_bytes": 262144, "nodes": 256, "retry": 10},
 	}
 }
@@ -177,7 +187,7 @@ func (c *compiler) paths(n *yaml.Node, job string) []string {
 	if n == nil {
 		return []string{}
 	}
-	f := c.mapping(n, job, "artifacts", "paths")
+	f := c.mapping(n, job, "artifacts", "paths", "files")
 	p := c.list(f["paths"], job, "artifacts.paths")
 	for _, s := range p {
 		if s == "" || path.IsAbs(s) || path.Clean(s) != s || s == ".." || strings.HasPrefix(s, "../") || strings.ContainsAny(s, "\\*?[]\x00") {
@@ -185,6 +195,69 @@ func (c *compiler) paths(n *yaml.Node, job string) []string {
 		}
 	}
 	return p
+}
+
+func (c *compiler) identity(n *yaml.Node, job, field string) string {
+	if n == nil {
+		return ""
+	}
+	v, err := uuid.Parse(c.str(n, job, field))
+	if err != nil || v == uuid.Nil {
+		c.error(n, job, field, "invalid_identity", field+" must be a nonzero UUID")
+		return ""
+	}
+	return v.String()
+}
+
+func (c *compiler) details(n *yaml.Node, job string, node *Node) {
+	f := fields(n)
+	node.AgentID = c.identity(f["agent_id"], job, "agent_id")
+	node.OwnerUserID = c.identity(f["owner_user_id"], job, "owner_user_id")
+	if node.AgentID != "" && node.Role != "" {
+		c.error(n, job, "agent_id", "ambiguous_executor", "choose a stable agent or a role, not both")
+	}
+	if node.OwnerUserID != "" && node.Owner != "" {
+		c.error(n, job, "owner_user_id", "ambiguous_owner", "choose a human identity or a legacy owner role, not both")
+	}
+	if node.Type == "manual" && node.AgentID != "" {
+		c.error(n, job, "agent_id", "unsupported_capability", "manual nodes cannot execute agents")
+	}
+	seen := map[string]bool{}
+	for _, p := range node.Paths {
+		seen[p] = true
+		node.Deliverables = append(node.Deliverables, Deliverable{Path: p, Name: path.Base(p)})
+	}
+	files := fields(f["artifacts"])["files"]
+	if files == nil {
+		return
+	}
+	if files.Kind != yaml.SequenceNode {
+		c.error(files, job, "artifacts.files", "invalid_yaml", "files must be an array")
+		return
+	}
+	for _, item := range files.Content {
+		d := c.mapping(item, job, "artifacts.files", "name", "path", "description")
+		name := c.str(d["name"], job, "artifacts.files.name")
+		p := c.str(d["path"], job, "artifacts.files.path")
+		if p == "" {
+			p = name
+		}
+		if strings.TrimSpace(name) == "" || strings.ContainsAny(name, "/\\\r\n\x00") || name == "." || name == ".." {
+			c.error(item, job, "artifacts.files.name", "invalid_deliverable", "name must be a single nonempty filename")
+		}
+		if p == "" || path.IsAbs(p) || path.Clean(p) != p || p == ".." || strings.HasPrefix(p, "../") || strings.ContainsAny(p, "\\*?[]\x00\r\n") {
+			c.error(item, job, "artifacts.files.path", "invalid_deliverable", "path must be an exact relative file path")
+		}
+		if seen[p] {
+			c.error(item, job, "artifacts.files.path", "duplicate_key", "duplicate delivery path: "+p)
+		}
+		seen[p] = true
+		node.Paths = append(node.Paths, p)
+		node.Deliverables = append(node.Deliverables, Deliverable{Path: p, Name: name, Description: c.str(d["description"], job, "artifacts.files.description")})
+	}
+	if node.Type == "manual" && len(files.Content) > 0 {
+		c.error(files, job, "artifacts.files", "unsupported_capability", "manual nodes do not produce files")
+	}
 }
 
 func Compile(source string) Validation {
@@ -289,7 +362,7 @@ func (c *compiler) gitlab(root *yaml.Node, p *Plan) {
 		if !identifier.MatchString(id) || strings.HasPrefix(id, ".") {
 			c.error(key, id, "", "unsupported_capability", "unsupported job identifier")
 		}
-		j := c.mapping(value, id, "", "stage", "instructions", "tags", "needs", "dependencies", "artifacts", "owner", "when", "allow_failure", "retry")
+		j := c.mapping(value, id, "", "stage", "instructions", "tags", "needs", "dependencies", "artifacts", "owner", "when", "allow_failure", "retry", "title", "agent_id", "owner_user_id")
 		n := Node{ID: id, SourceID: id, Title: id, Type: "agent", Stage: c.str(j["stage"], id, "stage"), Instructions: c.str(j["instructions"], id, "instructions"), Owner: c.str(j["owner"], id, "owner"), When: "on_success", AllowFailure: c.boolean(j["allow_failure"], id, "allow_failure"), Retry: c.retry(j["retry"], id), Paths: c.paths(j["artifacts"], id), Location: Location{key.Line, key.Column}}
 		idx, ok := stageIndex[n.Stage]
 		if !ok {
@@ -315,6 +388,13 @@ func (c *compiler) gitlab(root *yaml.Node, p *Plan) {
 		default:
 			c.error(j["when"], id, "when", "unsupported_capability", "unsupported when value")
 		}
+		if j["title"] != nil {
+			n.Title = c.str(j["title"], id, "title")
+			if strings.TrimSpace(n.Title) == "" {
+				c.error(j["title"], id, "title", "invalid_yaml", "title must be nonempty")
+			}
+		}
+		c.details(value, id, &n)
 		if n.Type == "agent" && strings.TrimSpace(n.Instructions) == "" {
 			c.error(value, id, "instructions", "invalid_yaml", "agent instructions are required")
 		}
@@ -368,7 +448,7 @@ func (c *compiler) hermes(root *yaml.Node, p *Plan) {
 	}
 	gates := fields(f["gates"])
 	for id, n := range gates {
-		g := c.mapping(n, id, "gate", "type", "owner")
+		g := c.mapping(n, id, "gate", "type", "owner", "owner_user_id", "title")
 		if c.str(g["type"], id, "type") != "manual" {
 			c.error(n, id, "type", "unsupported_capability", "only manual gates are supported")
 		}
@@ -386,11 +466,12 @@ func (c *compiler) hermes(root *yaml.Node, p *Plan) {
 		if !identifier.MatchString(id) {
 			c.error(k, id, "", "invalid_yaml", "invalid state identifier")
 		}
-		s := c.mapping(v, id, "", "title", "by", "entry", "gate", "artifacts", "output", "exit_check", "owner", "retry", "allow_failure")
+		s := c.mapping(v, id, "", "title", "by", "entry", "gate", "artifacts", "output", "exit_check", "owner", "retry", "allow_failure", "agent_id", "owner_user_id")
 		n := Node{ID: id, SourceID: id, Title: c.str(s["title"], id, "title"), Type: "agent", Stage: id, Instructions: c.str(s["entry"], id, "entry"), Role: c.str(s["by"], id, "by"), Owner: c.str(s["owner"], id, "owner"), Needs: []string{}, ArtifactSources: []string{}, Paths: c.paths(s["artifacts"], id), When: "on_success", AllowFailure: c.boolean(s["allow_failure"], id, "allow_failure"), Retry: c.retry(s["retry"], id), Location: Location{k.Line, k.Column}}
 		if n.Title == "" {
 			n.Title = id
 		}
+		c.details(v, id, &n)
 		if strings.TrimSpace(n.Instructions) == "" {
 			c.error(v, id, "entry", "invalid_yaml", "state entry is required")
 		}
@@ -416,7 +497,12 @@ func (c *compiler) hermes(root *yaml.Node, p *Plan) {
 			usedGates[gate] = true
 			gid := id + ".gate." + gate
 			last[id] = gid
-			p.Nodes = append(p.Nodes, Node{ID: gid, SourceID: id, Title: gate, Type: "manual", Stage: id, Owner: c.str(fields(g)["owner"], id, "owner"), When: "manual", Needs: []string{id}, ArtifactSources: []string{id}, Paths: []string{}, Location: Location{s["gate"].Line, s["gate"].Column}})
+			gn := Node{ID: gid, SourceID: id, Title: gate, Type: "manual", Stage: id, Owner: c.str(fields(g)["owner"], id, "owner"), When: "manual", Needs: []string{id}, ArtifactSources: []string{id}, Paths: []string{}, Location: Location{s["gate"].Line, s["gate"].Column}}
+			if fields(g)["title"] != nil {
+				gn.Title = c.str(fields(g)["title"], gid, "title")
+			}
+			c.details(g, gid, &gn)
+			p.Nodes = append(p.Nodes, gn)
 		}
 	}
 	for id, g := range gates {

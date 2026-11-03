@@ -24,6 +24,7 @@ import (
 
 func (h *Handler) PipelineRoutes(r chi.Router) {
 	r.Get("/api/pipelines/capabilities", h.PipelineCapabilities)
+	r.Get("/api/pipelines/candidates", h.PipelineCandidates)
 	r.Get("/api/pipelines/catalog", h.ListPipelineCatalog)
 	r.Post("/api/pipelines/catalog", h.CreatePipelineCatalog)
 	r.Get("/api/pipelines/catalog/{pipelineId}", h.GetPipelineCatalog)

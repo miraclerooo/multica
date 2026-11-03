@@ -52,6 +52,8 @@ func (s *PipelineService) Report(ctx context.Context, row db.PipelineRun, id str
 				return pipeline.Fail("invalid_artifact", "artifact paths must uniquely match declarations")
 			}
 			seen[artifact.Path] = true
+			declaration := job.Node.Artifact(artifact.Path, "declared")
+			artifact.Name, artifact.Description = declaration.Name, declaration.Description
 			artifact.ID = fmt.Sprintf("%s/%s/%d/%s", run.ID, id, attempt, artifact.Path)
 			artifact.JobID = id
 			artifact.Attempt = attempt
