@@ -127,6 +127,8 @@ Web and Desktop share the editor. Mobile's **More → Pipelines** entry supports
 
 In the Flow graph, add execution nodes or manual gates, edit their full properties, and connect them with ports or the connection form. YAML and canvas share one draft and undo history. Deleting a node previews its references; stage-derived dependencies require confirmation before becoming explicit needs. Unknown structures stay readable in YAML. Historical versions and run diagrams are read-only. Canvas editing requires no CLI update.
 
+On Web and Desktop, the task sidebar shows the run’s frozen version, stages and concurrent nodes. Success counts include only succeeded nodes; failed, rejected, skipped, cancelled and unfinished nodes remain distinct. The history picker keeps your selected run during updates. Open a node for its existing logs, materials and review controls, then return to the same sidebar position. At narrow widths, task properties open in a keyboard-accessible drawer.
+
 ## Using the CLI
 
 ```bash

@@ -123,6 +123,24 @@ export class TestApiClient {
     } finally { await db.end(); }
   }
 
+  /** Snapshot-only progress fixtures in this client's workspace; no agent is executed. */
+  async seedPipelineProgress(runId: string, state: Record<string, unknown>, historyCount = 0) {
+    const db = new pg.Client(DATABASE_URL);
+    await db.connect();
+    try {
+      const row = await db.query("SELECT * FROM pipeline_run WHERE id=$1 AND workspace_id=$2", [runId, this.workspaceId]);
+      if (!row.rows[0]) throw new Error("Fixture run does not belong to this workspace");
+      await db.query("UPDATE pipeline_run SET state=$3,status=$4,revision=revision+1 WHERE id=$1 AND workspace_id=$2", [runId, this.workspaceId, JSON.stringify({...state,id:runId}),state.status]);
+      const ids: string[] = [];
+      for (let i=0;i<historyCount;i++) {
+        const id=randomUUID();ids.push(id);
+        const copy={...state,id,status:"failed",reason:"Fixture: first node failed, remaining nodes skipped",jobs:(state.jobs as {status:string}[]).map((job,index)=>({...job,status:index?"skipped":"failed",attempts:[],reason:index?"upstream_failed":"fixture_failure"}))};
+        await db.query("INSERT INTO pipeline_run (id,workspace_id,issue_id,squad_id,definition_id,creator_id,idempotency_key,request_hash,status,state,created_at) SELECT $3::uuid,workspace_id,issue_id,squad_id,definition_id,creator_id,$3::uuid::text,'progress-fixture','failed',$4,created_at+($5::int * interval '1 second') FROM pipeline_run WHERE id=$1 AND workspace_id=$2",[runId,this.workspaceId,id,JSON.stringify(copy),i+1]);
+      }
+      return ids;
+    } finally { await db.end(); }
+  }
+
   async login(email: string, name: string) {
     const client = new pg.Client(DATABASE_URL);
     await client.connect();

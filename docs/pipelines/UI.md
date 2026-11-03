@@ -1,6 +1,18 @@
 # Pipeline and task document interfaces (YANF-8)
 
-## v1.7 experience and metadata
+## v1.8 task sidebar progress
+
+The existing Web/Desktop issue sidebar reads all pages of actual run history, then opens the selected run through the same workspace/run query used by `PipelineRunDetails`. It defaults to the newest active run, otherwise the latest. Explicit history and stage preferences are scoped by workspace, issue and run; pipeline events/reconnects refresh snapshots without replacing that selection. The catalog is never used to redraw a frozen run.
+
+Frozen stages retain plan order and names; a plan without stages displays its nodes directly. Concurrent running and approval nodes remain visible together. Current attempts use their real number rather than the attempt array order. Owner names come from visible member identities; missing identities are not guessed. Only succeeded nodes count as success. Failure, rejection, skipping, cancellation, unfinished and unknown counts remain separate, including the first-failure regression: succeeded 0/4, failed 1, skipped 3. Uncertain snapshots use a neutral success meter.
+
+Malformed, 403 and unavailable reads remain distinguishable from an acknowledged empty list. Saved executions without a run show their actual readiness and open the existing continuation panel; a task's explicit Markdown selection does not inherit a later squad default. Sidebar controls read or navigate. Node details reuse the original permission/revision/material/opinion/action guards, presenting the selected job first and the existing graph afterward.
+
+At narrow Web widths, the existing task-properties Sheet has a labelled close control, native inert task background and explicit opener restoration. A nested run-details dialog returns to the selected node and reveals it by scrolling only its sidebar ancestor. Pipeline updates do not focus or scroll the task reader. Web and Desktop both mount `IssueDetailRoute`; native mobile and Electron window visuals remain unverified.
+
+Canonical checks are `progress.test.ts` (node/stage/count rules), `progress-queries.test.ts` (paging and identity), `issue-progress.test.tsx` (component selection/errors/isolation), and `e2e/pipeline-progress.spec.ts` (authenticated local API/DB, real pipeline events, 390px keyboard and scroll). Existing run-details action guards and saved-execution continuation are checked only where affected. Browser transport error responses are controlled interceptions; execution snapshots/build reports use fixtures, with no installed or paid agent CLI. Evidence and exact local results are attached to YANF-8; this does not certify the full 80-item acceptance matrix.
+
+## v1.7 experience and metadata baseline
 
 The current Web/Desktop increment is stacked on backend PR #12, `50e8b723ee2d3de0bc6e73bad5c3d2f4f140bc0c`, over released main `c77a5bcb4d0f2654480858120ee61e9d7262ee04`. It consumes compiler 2, the metadata capability flags and authenticated `/api/pipelines/candidates` response. It does not replace the compiler with the reviewed prototype parser or metadata comments.
 

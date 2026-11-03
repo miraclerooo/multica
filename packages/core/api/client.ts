@@ -4872,13 +4872,15 @@ export class ApiClient {
     const endpoint = "/api/pipeline-runs";
     return parseWithFallback<pipelines.PipelineRun | null>(await this.fetch<unknown>(endpoint, {method: "POST", body: JSON.stringify(input)}), pipelines.PipelineRunSchema, null, { endpoint });
   }
-  async getPipelineRun(id: string): Promise<pipelines.PipelineRun | null> {
+  async getPipelineRun(id: string, options?: {signal?: AbortSignal}): Promise<pipelines.PipelineRun | null> {
     const endpoint = `/api/pipeline-runs/${encodeURIComponent(id)}`;
-    return parseWithFallback<pipelines.PipelineRun | null>(await this.fetch<unknown>(endpoint), pipelines.PipelineRunSchema, null, { endpoint });
+    return parseWithFallback<pipelines.PipelineRun | null>(await this.fetch<unknown>(endpoint,options), pipelines.PipelineRunSchema, null, { endpoint });
   }
-  async listPipelineRuns(input: pipelines.PipelineListInput = {}) {
+  async listPipelineRuns(input: pipelines.PipelineListInput = {}, options?: {signal?: AbortSignal}) {
     const endpoint = `/api/pipeline-runs?${this.pipelineSearch(input)}`;
-    return parseWithFallback<{items: pipelines.PipelineRun[]; limit: number; offset: number}>(await this.fetch<unknown>(endpoint), pipelines.PipelineRunListSchema, {items: [], limit: 50, offset: 0}, { endpoint });
+    const result = parseWithFallback<{items: pipelines.PipelineRun[]; limit: number; offset: number} | null>(await this.fetch<unknown>(endpoint,options), pipelines.PipelineRunListSchema, null, { endpoint });
+    if (!result) throw new Error("Invalid pipeline run list response");
+    return result;
   }
   async getPipelineJob(id: string, job: string): Promise<pipelines.PipelineJob | null> {
     const endpoint = `/api/pipeline-runs/${encodeURIComponent(id)}/jobs/${encodeURIComponent(job)}`;

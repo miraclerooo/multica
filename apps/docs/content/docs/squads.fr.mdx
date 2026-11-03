@@ -115,6 +115,8 @@ Web et Desktop partagent l’éditeur. Sur mobile, More → Pipelines permet de 
 
 Dans le graphe, ajoutez des nœuds d’exécution ou de validation, modifiez leurs propriétés complètes et reliez-les par les ports ou le formulaire. YAML et canvas partagent un brouillon et l’historique d’annulation. La suppression affiche les références concernées ; remplacer les dépendances déduites par des needs explicites demande confirmation. Les structures inconnues restent accessibles en YAML. Les versions historiques et les graphes d’exécution sont en lecture seule. Aucune mise à jour du CLI n’est nécessaire.
 
+Sur Web et Desktop, la barre latérale affiche la version figée, les étapes et tous les nœuds parallèles. Seuls les nœuds réussis comptent comme succès ; échecs, refus, omissions, annulations et nœuds inachevés restent distincts. L’historique conserve l’exécution choisie pendant les mises à jour. Ouvrez un nœud pour retrouver ses journaux, ses pièces et les contrôles de validation, puis revenez à la même position. Sur écran étroit, le panneau des propriétés est accessible au clavier.
+
 ## Utiliser le CLI
 
 ```bash

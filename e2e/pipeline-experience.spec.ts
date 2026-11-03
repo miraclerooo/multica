@@ -466,6 +466,7 @@ test("previews a first squad default and freezes the explicitly selected legacy-
         .execution.definition_id,
     ).toBe(created.definition.id);
     await page.goto(`/${f.workspace.slug}/issues/${issue.identifier}`);
+    await page.getByTestId("issue-pipeline-card").getByRole("button",{name:"Execution details",exact:true}).click();
     const panel = page.getByTestId("issue-execution");
     await panel.scrollIntoViewIfNeeded();
     await panel.locator("summary").filter({ hasText: "insufficient" }).click();

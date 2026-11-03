@@ -34,13 +34,14 @@ import {
   Unlink,
   Users,
   ArrowDown,
+  XIcon,
 } from "@multica/ui/icons";
 import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Button } from "@multica/ui/components/ui/button";
 import { IconButton } from "@multica/ui/components/common/icon-button";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@multica/ui/components/ui/resizable";
-import { Sheet, SheetContent } from "@multica/ui/components/ui/sheet";
+import { Sheet, SheetContent, SheetClose, SheetTitle } from "@multica/ui/components/ui/sheet";
 import { useIsMobile } from "@multica/ui/hooks/use-mobile";
 import { ContentEditor, type ContentEditorRef, TitleEditor, type TitleEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useEditorUpload, PreviewSequenceProvider, collectPreviewSequence } from "../../editor";
 import {
@@ -119,7 +120,7 @@ import { QuickActionsSection } from "./quick-actions-section";
 import { PluginPanelSection } from "../../plugins";
 import { PullRequestsSection } from "./pull-requests-section";
 import { useGitHubSettings } from "@multica/core/github";
-import { IssuePipelineCard } from "../../pipelines/run-details";
+import { IssuePipelineCard } from "../../pipelines/issue-progress";
 import { IssueDocuments } from "../../projects/documents/associate-document";
 import { DeliverablesSection } from "./deliverables/deliverables-section";
 import { DeliverablesOverview } from "./deliverables/deliverables-overview";
@@ -1317,6 +1318,7 @@ export function IssueDetailSkeleton({
 // IssueDetail
 
 export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction, variant = "page", trailingActions }: IssueDetailProps) {
+  const {t:tSquads}=useT("squads");
   const isPeek = variant === "peek";
   const { t } = useT("issues");
   const { t: tCommon } = useT("common");
@@ -1367,6 +1369,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     handleResize: handleDesktopSidebarResize,
   } = useAnimatedRightSidebarState(desktopSidebarInitialOpen);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const mobileSidebarTriggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (isMobile) {
@@ -2672,6 +2675,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
   const handleToggleSidebar = useCallback(() => {
     if (isMobile) {
+      mobileSidebarTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setMobileSidebarOpen((open) => !open);
       return;
     }
@@ -3208,7 +3212,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
   const detailContent = (
     <CurrentIssueRenderContextProvider value={currentIssueRenderContext}>
-    <div className="relative flex h-full min-w-0 flex-1 flex-col">
+    <div className="relative flex h-full min-w-0 flex-1 flex-col" inert={isMobile && mobileSidebarOpen}>
         {/* In-page find bar — floats over the top-right of the content column
             (below the breadcrumb header), outside the scroll container so it
             stays put while the timeline scrolls and its own text isn't walked.
@@ -4057,7 +4061,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       <div className="flex flex-1 min-h-0">
         {detailContent}
         <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-          <SheetContent side="right" showCloseButton={false} className="w-[320px] overflow-y-auto [scrollbar-gutter:stable] px-2 py-4">
+          <SheetContent side="right" showCloseButton={false} finalFocus={mobileSidebarTriggerRef} className="w-[320px] max-w-[100vw] overflow-y-auto [scrollbar-gutter:stable] px-2 py-4" data-testid="issue-properties-sheet">
+            <SheetTitle className="sr-only">{tSquads($=>$.v18.sidebar_title)}</SheetTitle>
+            <SheetClose render={<Button type="button" variant="ghost" size="icon-sm" className="self-end" aria-label={tSquads($=>$.v18.close_sidebar)}/>}><XIcon/></SheetClose>
             {sidebarContent}
           </SheetContent>
         </Sheet>
