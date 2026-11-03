@@ -13,6 +13,7 @@ import {
   editPipelineCanvasLayout,
   usePipelineCanvasStore,
   type CanvasDocument,
+  type CanvasNode,
   type PipelineCanvasLayout,
 } from "@multica/core/pipelines";
 import { Button } from "@multica/ui/components/ui/button";
@@ -41,6 +42,10 @@ export function CanvasViewport({
   onSelectEdge,
   onConnect,
   onReconnect,
+  onClear,
+  onPort,
+  onEditConnection,
+  describeNode,
 }: {
   model: CanvasDocument;
   scope: string;
@@ -51,6 +56,10 @@ export function CanvasViewport({
   onSelectEdge: (id: string) => void;
   onConnect: (from: string, to: string) => void;
   onReconnect: (id: string, from: string, to: string) => void;
+  onClear: () => void;
+  onPort: (from?: string, to?: string) => void;
+  onEditConnection: (id: string) => void;
+  describeNode: (node: CanvasNode) => string;
 }) {
   const { t } = useT("squads");
   const layout =
@@ -148,6 +157,7 @@ export function CanvasViewport({
     e.preventDefault();
     e.stopPropagation();
     capture(e);
+    moved.current = false;
     const old = model.edges.find((v) => v.id === edgeId);
     const start =
       old && side === "from" ? port(old.to, "to") : port(from, "from");
@@ -191,6 +201,7 @@ export function CanvasViewport({
     const g = gesture.current;
     gesture.current = null;
     setPending(null);
+    if (g && !g.node && !g.connection && !moved.current) onClear();
     if (!g?.connection || !canConnect) return;
     const c = g.connection,
       old = model.edges.find((v) => v.id === c.edgeId);
@@ -339,7 +350,7 @@ export function CanvasViewport({
                     pointerEvents="stroke"
                     role="button"
                     tabIndex={0}
-                    aria-label={`${edge.from} → ${edge.to} · ${edge.kind}`}
+                    aria-label={`${model.nodes.find((n) => n.id === edge.from)?.title || edge.from} → ${model.nodes.find((n) => n.id === edge.to)?.title || edge.to} · ${edge.kind}`}
                     onClick={() => onSelectEdge(edge.id)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
@@ -369,9 +380,7 @@ export function CanvasViewport({
                 className="pipeline-canvas-card"
                 style={{ left: p.x, top: p.y }}
               >
-                <div className="text-micro text-muted-foreground mb-2 truncate">
-                  {node.stage}
-                </div>
+                <div className="h-5" aria-hidden />
                 <button
                   type="button"
                   className={cn(
@@ -400,9 +409,7 @@ export function CanvasViewport({
                       {node.title || node.id}
                     </span>
                     <span className="block truncate text-caption text-muted-foreground">
-                      {node.type === "manual"
-                        ? t(($) => $.pipeline.manual)
-                        : node.role || t(($) => $.pipeline.leader)}
+                      {describeNode(node)}
                     </span>
                   </span>
                 </button>
@@ -411,17 +418,23 @@ export function CanvasViewport({
                   className="pipeline-canvas-port input"
                   data-canvas-input={node.id}
                   disabled={!canConnect}
-                  aria-label={`${t(($) => $.canvas.connect_to)} ${node.id}`}
+                  aria-label={`${t(($) => $.canvas.connect_to)} ${node.title || node.id}`}
                   onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => onSelect(node.id)}
+                  onClick={() => {
+                    if (canConnect) onPort(undefined, node.id);
+                  }}
                 />
                 <button
                   type="button"
                   className="pipeline-canvas-port output"
                   data-canvas-output={node.id}
                   disabled={!canConnect}
-                  aria-label={`${t(($) => $.canvas.connect_from)} ${node.id}`}
+                  aria-label={`${t(($) => $.canvas.connect_from)} ${node.title || node.id}`}
                   onPointerDown={(e) => beginConnection(e, node.id)}
+                  onClick={(e) => {
+                    if (canConnect && (!moved.current || e.detail === 0))
+                      onPort(node.id);
+                  }}
                 />
               </div>
             );
@@ -448,12 +461,18 @@ export function CanvasViewport({
                   onPointerDown={(e) =>
                     beginConnection(e, connection.from, connection.id, side)
                   }
+                  onClick={(e) => {
+                    if (canConnect && (!moved.current || e.detail === 0))
+                      onEditConnection(connection.id);
+                  }}
                 />
               );
             })}
         </div>
       </div>
-      <p className="pipeline-metadata p-3">{t(($) => $.canvas.legend)}</p>
+      <p className="pipeline-metadata p-3">
+        {t(($) => $.v17.port_help)} {t(($) => $.canvas.legend)}
+      </p>
     </div>
   );
 }

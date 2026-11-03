@@ -26,11 +26,13 @@ export function FlowGraph({
   run,
   selected,
   onSelect,
+  describeNode,
 }: {
   plan: PipelinePlan;
   run?: PipelineRun;
   selected?: string;
   onSelect: (id: string) => void;
+  describeNode?: (node: PipelinePlan["nodes"][number]) => string;
 }) {
   const { t } = useT("squads");
   const [zoom, setZoom] = useState(1);
@@ -158,9 +160,6 @@ export function FlowGraph({
                   key={node.id}
                   style={{ position: "absolute", left: x, top: y, width: 212 }}
                 >
-                  <div className="text-micro text-muted-foreground mb-2 truncate">
-                    {node.stage}
-                  </div>
                   <button
                     type="button"
                     className={cn(
@@ -177,9 +176,14 @@ export function FlowGraph({
                       </span>
                       <span className="block text-micro text-muted-foreground truncate">
                         {job?.status ??
+                          describeNode?.(node) ??
                           (node.type === "manual"
                             ? t(($) => $.pipeline.manual)
-                            : node.role || t(($) => $.pipeline.leader))}
+                            : node.agent_id
+                              ? t(($) => $.v17.executor)
+                              : node.agent_id
+                                ? t(($) => $.v17.executor)
+                                : node.role || t(($) => $.pipeline.leader))}
                       </span>
                     </span>
                   </button>
@@ -214,8 +218,24 @@ export function FlowGraph({
                 {node.title || node.id}
                 <span className="block text-micro text-muted-foreground">
                   {run?.jobs.find((j) => j.node.id === node.id)?.status ??
-                    node.type}{" "}
-                  · {pipelineDependencies(node).join(", ")}
+                    describeNode?.(node) ??
+                    (node.type === "manual"
+                      ? t(($) => $.pipeline.manual)
+                      : node.agent_id
+                        ? t(($) => $.v17.executor)
+                        : node.role || t(($) => $.pipeline.leader))}
+                  {pipelineDependencies(node).length > 0 && (
+                    <>
+                      {" "}
+                      ·{" "}
+                      {pipelineDependencies(node)
+                        .map(
+                          (id) =>
+                            plan.nodes.find((n) => n.id === id)?.title || id,
+                        )
+                        .join(", ")}
+                    </>
+                  )}
                 </span>
               </span>
             </button>

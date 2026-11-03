@@ -105,9 +105,15 @@ Archiving cannot be undone.
 
 ## Pipeline mode
 
-Open a squad's **Pipeline** tab to edit a `gitlab_yaml` or `hermes_yaml` definition. Roles come from the squad's full roster; the same role can handle several nodes, and a squad with only its leader is supported. The preview renders the server's compiled plan, including your node names and dependencies.
+The **Pipeline** tab manages named workflows and their independent versions. **New pipeline** and **Edit pipeline** open a dialog on **Flow graph**; **Source** keeps the complete YAML available. New workflows start with a four-step GitLab draft. Existing Hermes definitions remain editable in their own format.
 
-**Save version** keeps an immutable definition. **Save and enable** also makes it the default for future runs; existing runs retain their original definition and materials. Switching back to Instructions preserves the squad's instructions. Dialect changes start separate drafts because automatic conversion is unavailable. Mika proposes a complete draft that you validate and publish explicitly.
+Select a node or connection directly to edit it. **Add node** offers execution or human approval. Node properties start with basic settings; complete instructions have their own tab, and internal IDs/stages are advanced settings. Renaming a node leaves its internal identity and order unchanged. Canceling or switching selection keeps unapplied fields locally; apply or discard them before saving the pipeline. Use a port to drag a connection, or activate it with the keyboard or touch to choose endpoints.
+
+Executors include all squad agents, including members without roles, plus the dynamic leader and saved role bindings. Selecting a specific member keeps that identity. Permission to invoke an agent and its runtime readiness are separate: a missing or incompatible runtime is shown explicitly. Human approvals offer searchable workspace people and default new nodes to your authenticated user identity. Existing unresolved owners are retained until you replace them explicitly; an owner receives notifications but does not bypass approval permissions.
+
+Expected files have a file name and a multiline description. Paragraphs are retained in source, drafts, saved versions, materials and Markdown linking forms. Full paths distinguish files that share a name. A declaration alone is not a published artifact.
+
+**Save version** keeps an immutable definition. **Save and enable** also makes it the default for future runs; existing runs retain their original definition and materials. The inspector's **Execution mode** controls the squad default separately from the catalog. With no saved workflow, it opens an editable default preview; nothing is enabled until you save and enable. Switching to Instructions retains the squad's instructions. Mika proposes a complete draft that you validate and publish explicitly.
 
 An issue's Pipeline card opens its run history, node attempts, logs and published materials. A manual gate waits for upstream work and required materials. Human reviewers can approve or reject; rejection requires a comment. Reviews retain fixed document revisions, attachments or repository SHAs. Missing price data appears as **Unpriced**.
 

@@ -66,7 +66,11 @@ export function IssuePipelineCard({ issue }: { issue: Issue }) {
   const start = useCreatePipelineRun(wsId);
   const member = useCurrentMember(wsId);
   const operation = useRef(crypto.randomUUID());
-  if (!issue.execution && !runs.data?.items.length && squad.data?.instructions_mode !== "pipeline")
+  if (
+    !issue.execution &&
+    !runs.data?.items.length &&
+    squad.data?.instructions_mode !== "pipeline"
+  )
     return null;
   return (
     <section
@@ -104,7 +108,8 @@ export function IssuePipelineCard({ issue }: { issue: Issue }) {
       {!runs.isLoading && !runs.isError && !runs.data?.items.length && (
         <p className="pipeline-metadata">{t(($) => $.pipeline.no_runs)}</p>
       )}
-      {!issue.execution && squad.data?.instructions_mode === "pipeline" &&
+      {!issue.execution &&
+        squad.data?.instructions_mode === "pipeline" &&
         issue.assignee_id &&
         member.member &&
         !runs.data?.items.some((r) =>
@@ -317,22 +322,27 @@ export function PipelineRunDetails({ runId }: { runId: string }) {
             {t(($) => $.pipeline.refresh)}
           </Button>
           {currentMember.member && (actions.cancel || actions.restriction) && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!actions.cancel || cancel.isPending}
-                onClick={() => {
-                  if (!actions.cancel || !currentMember.member || cancel.isPending) return;
-                  if (window.confirm(t(($) => $.pipeline.cancel_confirm)))
-                    cancel.mutate({
-                      reason: "Cancelled from pipeline view",
-                      idempotency_key: cancelKey.current,
-                    });
-                }}
-              >
-                {t(($) => $.pipeline.cancel_run)}
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!actions.cancel || cancel.isPending}
+              onClick={() => {
+                if (
+                  !actions.cancel ||
+                  !currentMember.member ||
+                  cancel.isPending
+                )
+                  return;
+                if (window.confirm(t(($) => $.pipeline.cancel_confirm)))
+                  cancel.mutate({
+                    reason: "Cancelled from pipeline view",
+                    idempotency_key: cancelKey.current,
+                  });
+              }}
+            >
+              {t(($) => $.pipeline.cancel_run)}
+            </Button>
+          )}
         </div>
       </div>
       {actions.restriction && (
@@ -458,11 +468,18 @@ function JobDetails({
               : t(($) => $.pipeline.manual)
             : name(attempt?.executor_id ?? job.executor_id) || "—"}
           {job.node.type === "agent" &&
+            !job.node.agent_id &&
             ` · ${job.node.role || t(($) => $.pipeline.leader)}`}
         </p>
-        {job.node.owner && (
+        {(job.node.owner_user_id || job.node.owner) && (
           <p className="pipeline-metadata">
-            {t(($) => $.pipeline.owner)}: {job.node.owner}
+            {job.node.owner_user_id
+              ? t(($) => $.v17.human_owner)
+              : t(($) => $.pipeline.owner)}
+            :{" "}
+            {job.node.owner_user_id
+              ? name(job.node.owner_user_id)
+              : job.node.owner}
           </p>
         )}
         <pre className="text-caption whitespace-pre-wrap break-words max-h-60 overflow-y-auto">
@@ -600,7 +617,9 @@ function JobDetails({
                     className="mt-2 w-full rounded-md border p-3 text-body bg-background"
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
-                    readOnly={!canOperate || !!actions.restriction || decision.isPending}
+                    readOnly={
+                      !canOperate || !!actions.restriction || decision.isPending
+                    }
                   />
                 </label>
                 {!reason.trim() && (
@@ -636,11 +655,23 @@ function JobDetails({
             )}
           </>
         )}
-        {job.node.paths.map((path) => (
-          <p key={path} className="pipeline-metadata">
-            {t(($) => $.pipeline.declared)}: <code>{path}</code>
-          </p>
-        ))}
+        {job.node.paths.map((path) => {
+          const file = job.node.deliverables.find((d) => d.path === path);
+          return (
+            <div key={path} className="space-y-1">
+              <p className="pipeline-metadata">
+                {t(($) => $.pipeline.declared)}:{" "}
+                <strong>{file?.name || path}</strong>
+              </p>
+              {file?.description && (
+                <p className="whitespace-pre-wrap break-words">
+                  {file.description}
+                </p>
+              )}
+              <code className="text-caption break-all">{path}</code>
+            </div>
+          );
+        })}
         <AppLink
           className="text-caption underline"
           href={paths.issueDetail(run.issue_id)}
@@ -745,7 +776,13 @@ function ArtifactMaterial({
   const [open, setOpen] = useState(false);
   return (
     <div className="pipeline-material text-caption">
-      <strong>{a.path}</strong>
+      <strong>{a.name || a.path}</strong>
+      {a.description && (
+        <p className="whitespace-pre-wrap break-words">{a.description}</p>
+      )}
+      {a.name && a.name !== a.path && (
+        <code className="pipeline-metadata break-all">{a.path}</code>
+      )}
       <span className="pipeline-metadata">
         {a.job_id} · {t(($) => $.pipeline.attempt)} {a.attempt} · {a.status}
       </span>
@@ -780,7 +817,8 @@ function ArtifactMaterial({
                 attempt: a.attempt,
                 path: a.path,
               }}
-              label={a.path}
+              label={a.name || a.path}
+              description={a.description}
             />
           )}
         </div>

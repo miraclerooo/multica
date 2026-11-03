@@ -93,49 +93,111 @@ async function fixture(page: Page, source = gitlab) {
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
   await page.goto(`/${workspace.slug}/squads/${squad.id}`);
   await page.getByRole("button", { name: "Pipeline", exact: true }).click();
-  await check(
-    page.getByRole("textbox", { name: "YAML", exact: true }),
-  ).toHaveValue(source);
+  const editor = () => page.getByTestId("pipeline-editor-dialog");
+  const open = async () => {
+    await page
+      .getByRole("button", { name: "Edit pipeline", exact: true })
+      .click();
+  };
+  await open();
   const graph = async () => {
-    await page.getByRole("button", { name: "Flow graph", exact: true }).click();
-    await check(page.getByTestId("pipeline-canvas")).toBeVisible();
+    await editor()
+      .getByRole("tab", { name: "Flow graph", exact: true })
+      .click();
+    await check(editor().getByTestId("pipeline-canvas")).toBeVisible();
   };
   const text = async () => {
-    await page.getByRole("button", { name: "YAML", exact: true }).click();
-    return page
+    await editor().getByRole("tab", { name: "Source", exact: true }).click();
+    return editor()
       .getByRole("textbox", { name: "YAML", exact: true })
       .inputValue();
   };
   const selectNode = async (id: string) => {
-    await page
-      .getByRole("combobox", { name: "Select node", exact: true })
-      .selectOption(id);
-    return page.getByTestId("canvas-properties");
+    await editor().locator(`[data-canvas-node="${id}"] .pipeline-node`).click();
+    return editor().getByTestId("canvas-properties");
   };
-  const addNode = async (id: string, stage: string, instructions: string) => {
-    await page
-      .getByRole("button", { name: "Add execution node", exact: true })
+  const advanced = async (form: Locator) => {
+    const details = form.locator("details");
+    if ((await details.getAttribute("open")) === null)
+      await details.locator("summary").click();
+  };
+  const instructions = async (form: Locator, value: string) => {
+    await form.getByRole("tab", { name: "Instructions", exact: true }).click();
+    await form
+      .getByRole("textbox", { name: "Complete instructions", exact: true })
+      .fill(value);
+    await form
+      .getByRole("tab", { name: "Basic settings", exact: true })
       .click();
-    const dialog = page.getByRole("dialog", {
-      name: "Add execution node",
-      exact: true,
-    });
+  };
+  const addNode = async (id: string, stage: string, instruction: string) => {
+    await editor()
+      .getByRole("button", { name: "Add node", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "Add node", exact: true });
+    await dialog
+      .getByRole("combobox", { name: "Node type", exact: true })
+      .selectOption("agent");
+    await dialog
+      .getByRole("textbox", { name: "Node name", exact: true })
+      .fill(id);
+    await instructions(dialog, instruction);
+    await advanced(dialog);
     await dialog
       .getByRole("textbox", { name: "Node ID", exact: true })
       .fill(id);
-    if (await dialog.getByLabel("Stage", { exact: true }).count())
-      await dialog.getByLabel("Stage", { exact: true }).fill(stage);
-    await dialog
-      .getByRole("textbox", { name: "Complete instructions", exact: true })
-      .fill(instructions);
+    if (stage) await dialog.getByLabel("Stage", { exact: true }).fill(stage);
     await dialog
       .getByRole("button", { name: "Apply changes", exact: true })
       .click();
-    await check(
-      page
-        .getByTestId("canvas-properties")
-        .getByRole("textbox", { name: "Node ID", exact: true }),
-    ).toHaveValue(id);
+    await check(editor().locator(`[data-canvas-node="${id}"]`)).toHaveCount(1);
+  };
+  const selectEdge = async (from: string, to: string) => {
+    await editor()
+      .getByRole("button", {
+        name: `${from === "researcher" ? "alpha" : from} → ${to} · needs`,
+        exact: true,
+      })
+      .focus();
+    await page.keyboard.press("Enter");
+  };
+  const connect = async (from: string, to: string) => {
+    await editor().locator(`[data-canvas-output="${from}"]`).focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog", {
+      name: "Add connection",
+      exact: true,
+    });
+    await dialog
+      .getByRole("combobox", { name: "From node", exact: true })
+      .selectOption(from);
+    await dialog
+      .getByRole("combobox", { name: "To node", exact: true })
+      .selectOption(to);
+    await dialog
+      .getByRole("button", { name: "Apply changes", exact: true })
+      .click();
+    return dialog;
+  };
+  const close = async () => {
+    await editor().getByRole("button", { name: "Close", exact: true }).click();
+    const confirm = page.getByRole("dialog", {
+      name: "Keep your changes?",
+      exact: true,
+    });
+    if (await confirm.count())
+      await confirm
+        .getByRole("button", { name: "Keep draft and close", exact: true })
+        .click();
+    await check(editor()).toHaveCount(0);
+  };
+  const switchPipeline = async (id: string) => {
+    await close();
+    await page
+      .getByRole("combobox", { name: "Choose a pipeline", exact: true })
+      .selectOption(id);
+    await open();
+    await text();
   };
   return {
     api,
@@ -150,6 +212,14 @@ async function fixture(page: Page, source = gitlab) {
     text,
     selectNode,
     addNode,
+    advanced,
+    instructions,
+    editor,
+    open,
+    close,
+    switchPipeline,
+    selectEdge,
+    connect,
     cleanup: async () => {
       for (const id of ids)
         await api.request(`/api/issues/${id}`, { method: "DELETE" });
@@ -159,7 +229,7 @@ async function fixture(page: Page, source = gitlab) {
   };
 }
 async function drag(page: Page, from: Locator, to: Locator) {
-  await check(page.locator('[data-slot="dialog-overlay"]')).toHaveCount(0);
+  await check(page.getByRole("dialog")).toHaveCount(1);
   await from.scrollIntoViewIfNeeded();
   const a = await from.boundingBox(),
     b = await to.boundingBox();
@@ -233,6 +303,7 @@ test("edits the actual GitLab document through nodes, dragged connections and se
       "An independent parallel instruction.",
     );
     let properties = await f.selectNode("alpha");
+    await f.advanced(properties);
     const newInstructions =
       "The complete edited instruction.\nURL: https://example.test/report#section\nA third line stays intact.\nFourth explicit line.";
     await properties
@@ -248,12 +319,10 @@ test("edits the actual GitLab document through nodes, dragged connections and se
     await properties
       .getByRole("textbox", { name: "Node ID", exact: true })
       .fill("researcher");
+    await f.instructions(properties, newInstructions);
     await properties
-      .getByRole("textbox", { name: "Complete instructions", exact: true })
-      .fill(newInstructions);
-    await properties
-      .getByRole("combobox", { name: "Execution role", exact: true })
-      .selectOption("reviewer");
+      .getByRole("combobox", { name: "Executor", exact: true })
+      .selectOption("role:reviewer");
     await properties
       .getByRole("spinbutton", { name: "Retries (0–10)", exact: true })
       .fill("2");
@@ -274,17 +343,13 @@ test("edits the actual GitLab document through nodes, dragged connections and se
       .getByRole("dialog", { name: "Replace stage inference", exact: true })
       .getByRole("button", { name: "Confirm change", exact: true })
       .click();
-    await page
-      .getByRole("combobox", { name: "Select connection", exact: true })
-      .selectOption(JSON.stringify(["needs", "delta", "beta"]));
+    await f.selectEdge("delta", "beta");
     await drag(
       page,
       page.getByRole("button", { name: "Reconnect start", exact: true }),
       page.getByRole("button", { name: "Connect from parallel", exact: true }),
     );
-    await page
-      .getByRole("combobox", { name: "Select connection", exact: true })
-      .selectOption(JSON.stringify(["needs", "parallel", "beta"]));
+    await f.selectEdge("parallel", "beta");
     await drag(
       page,
       page.getByRole("button", { name: "Reconnect end", exact: true }),
@@ -294,9 +359,7 @@ test("edits the actual GitLab document through nodes, dragged connections and se
       .getByRole("dialog", { name: "Replace stage inference", exact: true })
       .getByRole("button", { name: "Confirm change", exact: true })
       .click();
-    await page
-      .getByRole("combobox", { name: "Select connection", exact: true })
-      .selectOption(JSON.stringify(["needs", "parallel", "delta"]));
+    await f.selectEdge("parallel", "delta");
     await page
       .getByRole("button", { name: "Delete connection", exact: true })
       .click();
@@ -305,7 +368,7 @@ test("edits the actual GitLab document through nodes, dragged connections and se
     await f.graph();
     properties = await f.selectNode("gate");
     await check(
-      properties.getByRole("combobox", { name: "Execution role", exact: true }),
+      properties.getByRole("combobox", { name: "Executor", exact: true }),
     ).toHaveCount(0);
     await check(properties.getByRole("spinbutton")).toHaveCount(0);
     await properties
@@ -332,6 +395,7 @@ test("edits the actual GitLab document through nodes, dragged connections and se
     await check(page.locator("[data-canvas-node]")).toHaveCount(4);
     await page.getByRole("button", { name: "Undo", exact: true }).click();
     properties = await f.selectNode("gate");
+    await f.advanced(properties);
     await properties
       .getByRole("checkbox", { name: "Continue after failure", exact: true })
       .check();
@@ -452,7 +516,7 @@ test("edits the actual GitLab document through nodes, dragged connections and se
   }
 });
 
-test("edits Hermes states and real manual gates at 390px, then creates an independent empty pipeline", async ({
+test("edits Hermes states and real manual gates at 390px, then imports an independent source pipeline", async ({
   page,
 }, info) => {
   test.setTimeout(180_000);
@@ -460,15 +524,13 @@ test("edits Hermes states and real manual gates at 390px, then creates an indepe
   try {
     await page.setViewportSize({ width: 390, height: 844 });
     await f.graph();
+    await page.getByRole("button", { name: "Add node", exact: true }).click();
     await page
-      .getByRole("button", { name: "Add execution node", exact: true })
-      .click();
-    await page
-      .getByRole("dialog", { name: "Add execution node", exact: true })
+      .getByRole("dialog", { name: "Add node", exact: true })
       .getByRole("button", { name: "Cancel", exact: true })
       .click();
     await check(
-      page.getByRole("button", { name: "Add execution node", exact: true }),
+      page.getByRole("button", { name: "Add node", exact: true }),
     ).toBeFocused();
     await f.addNode(
       "research",
@@ -477,43 +539,36 @@ test("edits Hermes states and real manual gates at 390px, then creates an indepe
     );
     let properties = page.getByTestId("canvas-properties");
     await properties
-      .getByRole("textbox", { name: "Title", exact: true })
+      .getByRole("textbox", { name: "Node name", exact: true })
       .fill("Research complete context");
     await properties
-      .getByRole("combobox", { name: "Execution role", exact: true })
-      .selectOption("reviewer");
+      .getByRole("combobox", { name: "Executor", exact: true })
+      .selectOption("role:reviewer");
     await properties
-      .getByRole("textbox", {
-        name: "Exact output paths, one per line",
-        exact: true,
-      })
-      .fill("reports/research.md");
+      .getByRole("button", { name: "Add file", exact: true })
+      .click();
+    await properties
+      .getByRole("textbox", { name: "File name", exact: true })
+      .fill("research.md");
     await properties
       .getByRole("button", { name: "Apply changes", exact: true })
       .click();
     await check(
       page.getByRole("button", { name: "Save version", exact: true }),
     ).toBeDisabled();
-    await page
-      .getByRole("button", { name: "Add connection", exact: true })
+    await f.connect("finish", "research");
+    await f
+      .editor()
+      .getByRole("button", { name: "Add node", exact: true })
       .click();
-    let dialog = page.getByRole("dialog", {
-      name: "Add connection",
-      exact: true,
-    });
+    let dialog = page.getByRole("dialog", { name: "Add node", exact: true });
     await dialog
-      .getByRole("combobox", { name: "From node", exact: true })
-      .selectOption("finish");
+      .getByRole("combobox", { name: "Node type", exact: true })
+      .selectOption("manual");
     await dialog
-      .getByRole("combobox", { name: "To node", exact: true })
-      .selectOption("research");
-    await dialog
-      .getByRole("button", { name: "Apply changes", exact: true })
-      .click();
-    await page
-      .getByRole("button", { name: "Add manual gate", exact: true })
-      .click();
-    dialog = page.getByRole("dialog", { name: "Add manual gate", exact: true });
+      .getByRole("textbox", { name: "Node name", exact: true })
+      .fill("Human release");
+    await f.advanced(dialog);
     await dialog
       .getByRole("textbox", { name: "Gate ID", exact: true })
       .fill("human_release");
@@ -521,17 +576,15 @@ test("edits Hermes states and real manual gates at 390px, then creates an indepe
       .getByRole("combobox", { name: "After state", exact: true })
       .selectOption("research");
     await dialog
-      .getByRole("textbox", { name: "Human owner role", exact: true })
-      .fill("human_reviewer");
-    await dialog
-      .getByRole("textbox", { name: "Human owner role", exact: true })
+      .getByRole("textbox", { name: "Gate ID", exact: true })
       .press("Enter");
     properties = page.getByTestId("canvas-properties");
+    await f.advanced(properties);
     await check(
       properties.getByRole("textbox", { name: "Gate ID", exact: true }),
     ).toHaveValue("human_release");
     await check(
-      properties.getByRole("combobox", { name: "Execution role", exact: true }),
+      properties.getByRole("combobox", { name: "Executor", exact: true }),
     ).toHaveCount(0);
     await check(properties.getByRole("spinbutton")).toHaveCount(0);
     await check(
@@ -540,6 +593,7 @@ test("edits Hermes states and real manual gates at 390px, then creates an indepe
     await properties.scrollIntoViewIfNeeded();
     await screenshot(page, info.outputPath("canvas-hermes-gate-390.png"));
     properties = await f.selectNode("collect");
+    await f.advanced(properties);
     await properties
       .getByRole("textbox", { name: "Node ID", exact: true })
       .fill("context");
@@ -547,6 +601,7 @@ test("edits Hermes states and real manual gates at 390px, then creates an indepe
       .getByRole("button", { name: "Apply changes", exact: true })
       .click();
     properties = await f.selectNode("context.gate.approval");
+    await f.advanced(properties);
     await properties
       .getByRole("textbox", { name: "Gate ID", exact: true })
       .fill("context_review");
@@ -555,19 +610,7 @@ test("edits Hermes states and real manual gates at 390px, then creates an indepe
       .click();
     const beforeIllegal = await f.text();
     await f.graph();
-    await page
-      .getByRole("button", { name: "Add connection", exact: true })
-      .click();
-    dialog = page.getByRole("dialog", { name: "Add connection", exact: true });
-    await dialog
-      .getByRole("combobox", { name: "From node", exact: true })
-      .selectOption("context");
-    await dialog
-      .getByRole("combobox", { name: "To node", exact: true })
-      .selectOption("research");
-    await dialog
-      .getByRole("button", { name: "Apply changes", exact: true })
-      .click();
+    dialog = await f.connect("context", "research");
     await check(dialog).toContainText(
       "one forward chain without branches or joins",
     );
@@ -622,7 +665,7 @@ test("edits Hermes states and real manual gates at 390px, then creates an indepe
     ).toMatchObject({ type: "manual", source_id: "context" });
     check(
       saved.plan.nodes.find((n: { id: string }) => n.id === "research"),
-    ).toMatchObject({ role: "reviewer", paths: ["reports/research.md"] });
+    ).toMatchObject({ role: "reviewer", paths: ["research.md"] });
     check(saved.source).not.toContain("  context.gate.");
     await page
       .getByRole("button", { name: "New pipeline", exact: true })
@@ -631,9 +674,12 @@ test("edits Hermes states and real manual gates at 390px, then creates an indepe
       .getByRole("textbox", { name: "Pipeline name", exact: true })
       .fill("My empty Hermes pipeline");
     await f.graph();
-    await page
-      .getByRole("button", { name: "Empty Hermes canvas", exact: true })
-      .click();
+    await f.text();
+    await f
+      .editor()
+      .getByRole("textbox", { name: "YAML", exact: true })
+      .fill("kind: hermes_yaml\nroles: {}\ngates: {}\nstates: {}\nedges: []\n");
+    await f.graph();
     await f.addNode(
       "solo",
       "",
@@ -698,25 +744,19 @@ test("keeps invalid source, two drafts, historical versions and real 409 compari
     });
     await f.graph();
     const properties = await f.selectNode("alpha");
-    await properties
-      .getByRole("textbox", { name: "Complete instructions", exact: true })
-      .fill("Retained first pipeline canvas edit.");
+    await f.instructions(properties, "Retained first pipeline canvas edit.");
     await properties
       .getByRole("button", { name: "Apply changes", exact: true })
       .click();
     const local = await f.text();
-    await page
-      .getByRole("combobox", { name: "Pipelines", exact: true })
-      .selectOption(second.pipeline.id);
+    await f.switchPipeline(second.pipeline.id);
     await check(
       page.getByRole("textbox", { name: "YAML", exact: true }),
     ).toHaveValue(hermes);
     await page
       .getByRole("textbox", { name: "YAML", exact: true })
       .fill(hermes + "# Isolated second draft\n");
-    await page
-      .getByRole("combobox", { name: "Pipelines", exact: true })
-      .selectOption(f.catalog.pipeline.id);
+    await f.switchPipeline(f.catalog.pipeline.id);
     await check(
       page.getByRole("textbox", { name: "YAML", exact: true }),
     ).toHaveValue(local);
@@ -728,7 +768,7 @@ test("keeps invalid source, two drafts, historical versions and real 409 compari
       page.getByText(/last available diagram is read-only/),
     ).toBeVisible();
     await check(
-      page.getByRole("button", { name: "Add execution node", exact: true }),
+      page.getByRole("button", { name: "Add node", exact: true }),
     ).toBeDisabled();
     await check(
       page.getByRole("button", { name: "Save version", exact: true }),
@@ -746,6 +786,8 @@ test("keeps invalid source, two drafts, historical versions and real 409 compari
     ).toHaveValue(local);
     await page.reload();
     await page.getByRole("button", { name: "Pipeline", exact: true }).click();
+    await f.open();
+    await f.text();
     await check(
       page.getByRole("textbox", { name: "YAML", exact: true }),
     ).toHaveValue(local);
@@ -774,7 +816,10 @@ test("keeps invalid source, two drafts, historical versions and real 409 compari
       .getByRole("button", { name: "Save version", exact: true })
       .click();
     check((await rejected).status()).toBe(409);
-    const comparison = page.getByRole("dialog");
+    const comparison = page.getByRole("dialog", {
+      name: "Compare latest",
+      exact: true,
+    });
     await check(comparison).toContainText(
       "Retained first pipeline canvas edit.",
     );
@@ -825,6 +870,8 @@ test("keeps invalid source, two drafts, historical versions and real 409 compari
     const saved = await (await saving).json();
     check(saved.revision).toBe(3);
     check(saved.source).toBe(local);
+    await f.open();
+    await f.text();
     await page.getByText("Version history", { exact: true }).click();
     const row = page
       .locator(".pipeline-toolbar.justify-between")
@@ -841,17 +888,15 @@ test("keeps invalid source, two drafts, historical versions and real 409 compari
     ).toHaveAttribute("readonly");
     await f.graph();
     await check(
-      page.getByRole("button", { name: "Add execution node", exact: true }),
+      page.getByRole("button", { name: "Add node", exact: true }),
     ).toBeDisabled();
     await page
       .getByRole("button", { name: "Edit current definition", exact: true })
       .click();
     await check(
-      page.getByRole("button", { name: "Add execution node", exact: true }),
+      page.getByRole("button", { name: "Add node", exact: true }),
     ).toBeEnabled();
-    await page
-      .getByRole("combobox", { name: "Pipelines", exact: true })
-      .selectOption(second.pipeline.id);
+    await f.switchPipeline(second.pipeline.id);
     await check(
       page.getByRole("textbox", { name: "YAML", exact: true }),
     ).toHaveValue(hermes + "# Isolated second draft\n");

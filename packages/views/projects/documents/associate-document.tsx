@@ -36,11 +36,13 @@ export function AssociateDocument({
   projectId,
   source,
   label = "",
+  description = "",
 }: {
   issueId: string;
   projectId: string | null | undefined;
   source?: DocumentSourceInput;
   label?: string;
+  description?: string;
 }) {
   const { t } = useT("squads");
   const [open, setOpen] = useState(false);
@@ -65,6 +67,7 @@ export function AssociateDocument({
             projectId={projectId}
             source={source}
             initialLabel={label}
+            initialDescription={description}
             onSaved={() => setOpen(false)}
           />
         )}
@@ -78,12 +81,14 @@ function AssociationForm({
   projectId,
   source,
   initialLabel,
+  initialDescription,
   onSaved,
 }: {
   issueId: string;
   projectId: string;
   source?: DocumentSourceInput;
   initialLabel: string;
+  initialDescription: string;
   onSaved: () => void;
 }) {
   const { t } = useT("squads");
@@ -91,7 +96,7 @@ function AssociationForm({
   const [target, setTarget] = useState("");
   const [title, setTitle] = useState("");
   const [label, setLabel] = useState(initialLabel);
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(initialDescription);
   const [reviewVersion, setReviewVersion] = useState<number | null>(null);
   const operation = useRef({ body: "", key: "" });
   const list = useQuery(documentGroupsOptions(wsId, projectId));
@@ -184,7 +189,9 @@ function AssociationForm({
           </label>
           <label className="block text-label">
             {t(($) => $.pipeline.description)}
-            <Input
+            <textarea
+              className="pipeline-field resize-y"
+              rows={3}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />

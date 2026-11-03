@@ -98,7 +98,7 @@ export class TestApiClient {
     } finally { await db.end(); }
   }
 
-  async seedPipelineDocumentMaterial(runId: string, documentId: string, documentVersion: number, failed = false) {
+  async seedPipelineDocumentMaterial(runId: string, documentId: string, documentVersion: number, failed = false, publishAllDeclaredPaths = false) {
     const db = new pg.Client(DATABASE_URL);
     await db.connect();
     try {
@@ -107,9 +107,14 @@ export class TestApiClient {
       const upstream = state.jobs.find((j: {node: {type: string}}) => j.node.type === "agent");
       const gate = state.jobs.find((j: {node: {type: string}}) => j.node.type === "manual");
       const taskId = upstream.attempts.at(-1)?.task_id ?? this.documentAgentFixtures.at(-1)!.taskId;
-      const artifact = {id: randomUUID(), job_id: upstream.node.id, attempt: 1, path: upstream.node.paths[0], status: "accessible", document_id: documentId, document_version: documentVersion};
+      const paths: string[]=publishAllDeclaredPaths?upstream.node.paths:upstream.node.paths.slice(0,1);
+      const artifacts=paths.map(path=>{
+        const metadata=upstream.node.deliverables?.find((file:{path:string})=>file.path===path);
+        return {id:randomUUID(),job_id:upstream.node.id,attempt:1,path,...(metadata?{name:metadata.name,description:metadata.description}:{}),status:"accessible",document_id:documentId,document_version:documentVersion};
+      });
+      const artifact=artifacts[0]!;
       upstream.status = failed ? "failed" : "succeeded"; upstream.reason = ""; upstream.revision++;
-      upstream.attempts = [{number: 1, task_id: taskId, executor_id: upstream.executor_id, status: "completed", inputs: [], report: {result: "succeeded", report: "Completed by the E2E fixture executor", artifacts: [artifact]}, started_at: new Date().toISOString(), completed_at: new Date().toISOString()}];
+      upstream.attempts = [{number: 1, task_id: taskId, executor_id: upstream.executor_id, status: "completed", inputs: [], report: {result: "succeeded", report: "Completed by the E2E fixture executor", artifacts}, started_at: new Date().toISOString(), completed_at: new Date().toISOString()}];
       gate.status = failed ? "pending" : "waiting_approval"; gate.reason = failed ? "upstream_failed" : ""; gate.revision++;
       state.status = failed ? "failed" : "waiting_approval"; state.reason = "";
       await db.query("UPDATE agent_task_queue SET status='completed',completed_at=now() WHERE id=$1", [taskId]);

@@ -1,6 +1,7 @@
 "use client";
 
 import { SquadPipelineCatalog as SquadPipeline } from "../../pipelines/catalog-workspace";
+import { SquadExecutionMode } from "../../pipelines/squad-execution-mode";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@multica/core/api";
@@ -63,6 +64,8 @@ import { toast } from "sonner";
 import type { Squad, SquadMember, SquadMemberStatus, SquadMemberStatusValue, Agent, MemberWithUser } from "@multica/core/types";
 import { useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
+
+const keepPipelineDraft = () => {};
 
 export function SquadDetailPage() {
   const { t } = useT("squads");
@@ -230,6 +233,7 @@ export function SquadDetailPage() {
           leaderName={getEntityName("agent", squad.leader_id)}
           creatorName={getEntityName("member", squad.creator_id)}
           canManage={canManage}
+          executionMode={<SquadExecutionMode squad={squad} members={members} canManage={canManage} getName={getEntityName} onDirtyChange={keepPipelineDraft}/>}
           onUploadAvatar={(url) => updateSquadMut.mutateAsync({ avatar_url: url })}
           onRename={async (next) => { await updateSquadMut.mutateAsync({ name: next.trim() }); }}
           onUpdateDescription={async (next) => { await updateSquadMut.mutateAsync({ description: next }); }}
@@ -721,6 +725,7 @@ function SquadDetailInspector({
   onUploadAvatar,
   onRename,
   onUpdateDescription,
+  executionMode,
 }: {
   squad: Squad;
   memberCount: number;
@@ -733,6 +738,7 @@ function SquadDetailInspector({
   onUploadAvatar: (url: string) => Promise<unknown>;
   onRename: (next: string) => Promise<void>;
   onUpdateDescription: (next: string) => Promise<void>;
+  executionMode?: ReactNode;
 }) {
   const { t } = useT("squads");
   const timeAgo = useTimeAgo();
@@ -795,7 +801,7 @@ function SquadDetailInspector({
               <span className="truncate">{leaderName}</span>
             </span>
           </InspectorRow>
-          <InspectorRow label={t(($) => $.pipeline.mode)}><span>{squad.instructions_mode === "pipeline" ? t(($) => $.pipeline.title) : squad.instructions_mode === "markdown" || !squad.instructions_mode ? t(($) => $.pipeline.markdown) : squad.instructions_mode}</span></InspectorRow>
+          <InspectorRow label={t(($) => $.pipeline.mode)}>{executionMode}</InspectorRow>
           <InspectorRow label={t(($) => $.details.members)}>
             <span className="text-muted-foreground tabular-nums">{memberCount}</span>
           </InspectorRow>

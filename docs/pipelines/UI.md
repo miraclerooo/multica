@@ -1,8 +1,39 @@
 # Pipeline and task document interfaces (YANF-8)
 
+## v1.7 experience and metadata
+
+The current Web/Desktop increment is stacked on backend PR #12, `50e8b723ee2d3de0bc6e73bad5c3d2f4f140bc0c`, over released main `c77a5bcb4d0f2654480858120ee61e9d7262ee04`. It consumes compiler 2, the metadata capability flags and authenticated `/api/pipelines/candidates` response. It does not replace the compiler with the reviewed prototype parser or metadata comments.
+
+The catalog lists concrete workflows only. Creation/editing use a graph-first dialog with a separate Source tab. One Add node flow handles agents and manual gates. Selecting graph elements opens properties; ports support dragging, both-end reconnection and keyboard/touch endpoint forms. Basic settings and complete instructions are separate tabs. Display names are independent of internal IDs and stages. Unapplied fields persist by workspace/squad/pipeline/node and must be applied or explicitly discarded before saving.
+
+Candidates distinguish stable human user IDs from membership IDs and explicit agent IDs from dynamic leader/role bindings. All squad agents are listed, including empty roles. Invocation permission is separate from daemon/disk readiness. New manual nodes default to the actual current human; existing missing/legacy owners remain unchanged until explicitly replaced. Unknown capabilities, unsafe source, historical versions, missing candidates and in-flight saves remain readable with guarded callbacks.
+
+Each expected file has its exact path, display name and untruncated multiline description. The form uses a three-row resizable textarea and preserves paragraphs/trailing newlines. Unchanged declarations are not rewritten. Materials and Markdown association forms display/carry the frozen metadata; same-name files retain path identity. Declared files do not become published artifacts by editing a definition.
+
+The squad inspector owns Execution mode. An empty catalog opens an editable four-step GitLab draft; previewing/canceling creates no definition, default or issue. Save and enable performs the explicit atomic activation. Catalog version saves leave the default and existing frozen tasks unchanged. Legacy Hermes sources remain their original dialect, with no automatic conversion.
+
+Ordinary issue visits initialize the task scroller at the latest content, including virtualized rows and initially pending images. Explicit comment anchors/search take precedence. Reader input cancels initialization, and later comments do not restart it. Shell scrolling is unaffected.
+
+Canonical tests live in core pipeline editor/state tests, shared pipeline components, `use-issue-initial-latest.test.tsx`, and authenticated browser scenarios in `pipeline-experience.spec.ts`, `pipeline-canvas.spec.ts`, `pipelines.spec.ts`, `pipeline-selection.spec.ts` and `issue-latest.spec.ts`. The browser uses an isolated managed backend with synthetic humans and fake executors, never a paid agent. New evidence is recorded under `ui-evidence/v1.7/` and the attached validation report. Mobile/native/Electron visuals, real Mika/agent/GitHub execution and the historical runtime recovery/cancel boundaries are not newly certified. This is implementation evidence for review, not all 75 acceptance items.
+
+### v1.7 local verification
+
+| Check | Observed scope |
+| --- | --- |
+| Core pipelines | 7 files / 109 passing cases |
+| Shared pipeline and issue-scroll components | 6 files / 65 passing cases, including missing/error/pending candidate keyboard-save guards and recovery |
+| Authenticated Chromium | 13 affected pipeline scenarios plus 3 issue-scroll scenarios, recorded separately in the delivery report |
+| Mobile | 3 existing transport/store/material test files / 10 passing cases; material names/descriptions render without truncation in the independent route |
+| Types | Core, views, Web, Desktop main/preload/renderer and mobile passed |
+| Lint/copy/docs | Changed core/views/mobile/E2E/landing paths passed; 6 matching v1.7 locale keysets (53 nonempty strings each), 5 landing tests and MDX generation passed |
+
+The issue-scroll regression first reproduced an ordinary long issue landing 11,297 pixels above the latest content. Candidate request failures also reproduced a keyboard save request before the final guard; all three named counterexamples now pass. Browser compilation/save responses are actual HTTP; executor completions and daemon build reports are controlled fixtures. Native simulator/device and Electron window checks were unavailable. The backend PR's independently reviewed Go-race/CLI evidence is reused, not counted as new local execution.
+
+## Historical v1.6 baseline
+
 The v1.6 definition canvas builds on released main `9b8d8917824c01db67389436dfcea10f189a6d82`, tree `054c19bf51c0a1c5ff3ebdd9d027ac256f5217ef`. It adds node and connection editing to the existing shared Web/Desktop definition route. It reuses catalog, definition and validation APIs; backend, compiler, scheduler and CLI semantics are unchanged. The released v1.5 selection/continuation and v1.4 Markdown/R07/D01/R2-01 protections remain in place. Earlier delivery records below are explicitly historical.
 
-## Entry points
+## Historical v1.6 entry points
 
 - Squad → Pipeline: named catalog, new/rename, independent version histories and a separately saved squad default; capabilities, dialect drafts, source diagnostics, compiled graph, complete-roster bindings, version comparison, immutable saves and atomic activation. Unsupported kinds remain readable with writes disabled. Dialect changes keep separate drafts; they do not convert or replace the original instructions.
 - Issue → Pipeline card → `/{workspace}/pipelines/{run}`: history, actual nodes, attempt selection, task logs, dependencies, pinned materials, retry, cancel and human decisions. The Web and Desktop routers mount the same view; Desktop also recognizes the new tab subject and diagnostics route.
