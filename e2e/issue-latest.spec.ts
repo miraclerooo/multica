@@ -19,6 +19,10 @@ test("opens an actual long virtualized issue at its latest content", async ({
           ),
         ),
       );
+    const latest = await api.createComment(
+      issue.id,
+      "Latest stable sentinel: complete task context.",
+    );
     await page.addInitScript((token) => {
       localStorage.setItem("multica_token", token!);
       localStorage.setItem("multica:chat:isOpen", "false");
@@ -38,7 +42,37 @@ test("opens an actual long virtualized issue at its latest content", async ({
         { timeout: 8000 },
       )
       .toBeLessThan(40);
-    await page.screenshot({ path: info.outputPath("issue-latest.png") });
+    const lastComment = page.locator(`#comment-${latest.id}`);
+    await expect(lastComment).toContainText(
+      "Latest stable sentinel: complete task context.",
+    );
+    await expect(lastComment).toBeInViewport();
+    const firstVisible = Date.now();
+    let previousHeight = 0,
+      stableSamples = 0;
+    await expect
+      .poll(
+        async () => {
+          const metrics = await scroller.evaluate((el) => ({
+            height: el.scrollHeight,
+            distance: el.scrollHeight - el.clientHeight - el.scrollTop,
+          }));
+          stableSamples =
+            metrics.height === previousHeight && metrics.distance < 40
+              ? stableSamples + 1
+              : 0;
+          previousHeight = metrics.height;
+          return Date.now() - firstVisible >= 2500 && stableSamples >= 3;
+        },
+        { timeout: 15000, intervals: [250] },
+      )
+      .toBe(true);
+    await expect(lastComment).toBeInViewport();
+    await page.screenshot({
+      path: info.outputPath("issue-latest.png"),
+      animations: "disabled",
+      style: "nextjs-portal {display:none!important}",
+    });
     await writeFile(
       info.outputPath("issue-latest-metrics.json"),
       JSON.stringify(

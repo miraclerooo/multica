@@ -27,7 +27,7 @@ Canonical tests live in core pipeline editor/state tests, shared pipeline compon
 | Types | Core, views, Web, Desktop main/preload/renderer and mobile passed |
 | Lint/copy/docs | Changed core/views/mobile/E2E/landing paths passed; 6 matching v1.7 locale keysets (53 nonempty strings each), 5 landing tests and MDX generation passed |
 
-The issue-scroll regression first reproduced an ordinary long issue landing 11,297 pixels above the latest content. Candidate request failures also reproduced a keyboard save request before the final guard; all three named counterexamples now pass. Browser compilation/save responses are actual HTTP; executor completions and daemon build reports are controlled fixtures. Native simulator/device and Electron window checks were unavailable. The backend PR's independently reviewed Go-race/CLI evidence is reused, not counted as new local execution.
+The issue-scroll regression first reproduced an ordinary long issue landing 11,297 pixels above the latest content. The refreshed long-list capture waits for the latest comment, at least 2.5 seconds and three stable geometry samples; its recorded distance from bottom and shell scroll are both zero. Candidate request failures also reproduced a keyboard save request before the final guard; all three named counterexamples now pass. Browser compilation/save responses are actual HTTP; executor completions and daemon build reports are controlled fixtures. Native simulator/device and Electron window checks were unavailable. The backend PR's independently reviewed Go-race/CLI evidence is reused, not counted as new local execution.
 
 ## Historical v1.6 baseline
 
