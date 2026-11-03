@@ -98,7 +98,7 @@ export class TestApiClient {
     } finally { await db.end(); }
   }
 
-  async seedPipelineDocumentMaterial(runId: string, documentId: string, documentVersion: number, failed = false) {
+  async seedPipelineDocumentMaterial(runId: string, documentId: string, documentVersion: number, failed = false, publishAllDeclaredPaths = false) {
     const db = new pg.Client(DATABASE_URL);
     await db.connect();
     try {
@@ -107,14 +107,37 @@ export class TestApiClient {
       const upstream = state.jobs.find((j: {node: {type: string}}) => j.node.type === "agent");
       const gate = state.jobs.find((j: {node: {type: string}}) => j.node.type === "manual");
       const taskId = upstream.attempts.at(-1)?.task_id ?? this.documentAgentFixtures.at(-1)!.taskId;
-      const artifact = {id: randomUUID(), job_id: upstream.node.id, attempt: 1, path: upstream.node.paths[0], status: "accessible", document_id: documentId, document_version: documentVersion};
+      const paths: string[]=publishAllDeclaredPaths?upstream.node.paths:upstream.node.paths.slice(0,1);
+      const artifacts=paths.map(path=>{
+        const metadata=upstream.node.deliverables?.find((file:{path:string})=>file.path===path);
+        return {id:randomUUID(),job_id:upstream.node.id,attempt:1,path,...(metadata?{name:metadata.name,description:metadata.description}:{}),status:"accessible",document_id:documentId,document_version:documentVersion};
+      });
+      const artifact=artifacts[0]!;
       upstream.status = failed ? "failed" : "succeeded"; upstream.reason = ""; upstream.revision++;
-      upstream.attempts = [{number: 1, task_id: taskId, executor_id: upstream.executor_id, status: "completed", inputs: [], report: {result: "succeeded", report: "Completed by the E2E fixture executor", artifacts: [artifact]}, started_at: new Date().toISOString(), completed_at: new Date().toISOString()}];
+      upstream.attempts = [{number: 1, task_id: taskId, executor_id: upstream.executor_id, status: "completed", inputs: [], report: {result: "succeeded", report: "Completed by the E2E fixture executor", artifacts}, started_at: new Date().toISOString(), completed_at: new Date().toISOString()}];
       gate.status = failed ? "pending" : "waiting_approval"; gate.reason = failed ? "upstream_failed" : ""; gate.revision++;
       state.status = failed ? "failed" : "waiting_approval"; state.reason = "";
       await db.query("UPDATE agent_task_queue SET status='completed',completed_at=now() WHERE id=$1", [taskId]);
       await db.query("UPDATE pipeline_run SET state=$2,status=$4,revision=revision+1 WHERE id=$1 AND workspace_id=$3", [runId, JSON.stringify(state), this.workspaceId, state.status]);
       return artifact;
+    } finally { await db.end(); }
+  }
+
+  /** Snapshot-only progress fixtures in this client's workspace; no agent is executed. */
+  async seedPipelineProgress(runId: string, state: Record<string, unknown>, historyCount = 0) {
+    const db = new pg.Client(DATABASE_URL);
+    await db.connect();
+    try {
+      const row = await db.query("SELECT * FROM pipeline_run WHERE id=$1 AND workspace_id=$2", [runId, this.workspaceId]);
+      if (!row.rows[0]) throw new Error("Fixture run does not belong to this workspace");
+      await db.query("UPDATE pipeline_run SET state=$3,status=$4,revision=revision+1 WHERE id=$1 AND workspace_id=$2", [runId, this.workspaceId, JSON.stringify({...state,id:runId}),state.status]);
+      const ids: string[] = [];
+      for (let i=0;i<historyCount;i++) {
+        const id=randomUUID();ids.push(id);
+        const copy={...state,id,status:"failed",reason:"Fixture: first node failed, remaining nodes skipped",jobs:(state.jobs as {status:string}[]).map((job,index)=>({...job,status:index?"skipped":"failed",attempts:[],reason:index?"upstream_failed":"fixture_failure"}))};
+        await db.query("INSERT INTO pipeline_run (id,workspace_id,issue_id,squad_id,definition_id,creator_id,idempotency_key,request_hash,status,state,created_at) SELECT $3::uuid,workspace_id,issue_id,squad_id,definition_id,creator_id,$3::uuid::text,'progress-fixture','failed',$4,created_at+($5::int * interval '1 second') FROM pipeline_run WHERE id=$1 AND workspace_id=$2",[runId,this.workspaceId,id,JSON.stringify(copy),i+1]);
+      }
+      return ids;
     } finally { await db.end(); }
   }
 

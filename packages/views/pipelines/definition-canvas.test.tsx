@@ -8,9 +8,13 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { useState, forwardRef, type ComponentProps } from "react";
-import { usePipelineCanvasStore } from "@multica/core/pipelines";
+import {
+  usePipelineCanvasStore,
+  usePipelineNodeDraftStore,
+} from "@multica/core/pipelines";
 import en from "../locales/en/squads.json";
 import { DefinitionCanvas } from "./definition-canvas";
+import { testCandidates } from "./test-candidates";
 
 const calls = vi.hoisted(() => ({
   change: vi.fn(),
@@ -83,7 +87,7 @@ function Harness({
         scope="w:s:p"
         canEdit={canEdit}
         readOnlyReason={reason}
-        roles={[]}
+        candidates={testCandidates}
         onChange={(value) => {
           calls.change(value);
           setSource(value);
@@ -99,16 +103,17 @@ function Harness({
 }
 afterEach(() => {
   cleanup();
+  usePipelineNodeDraftStore.getState().clearDraft();
   usePipelineCanvasStore.getState().clearDraft();
   vi.clearAllMocks();
   calls.buttons.clear();
 });
 it("adds a source node and opens its properties; cancelling an earlier add keeps the source", async () => {
   render(<Harness />);
-  fireEvent.click(screen.getByRole("button", { name: en.canvas.add_agent }));
-  let dialog = screen.getByRole("dialog", { name: en.canvas.add_agent });
+  fireEvent.click(screen.getByRole("button", { name: en.v17.add_node }));
+  let dialog = screen.getByRole("dialog", { name: en.v17.add_node });
   fireEvent.change(
-    within(dialog).getByRole("textbox", { name: en.canvas.id }),
+    within(dialog).getByRole("textbox", { name: en.v17.node_name }),
     { target: { value: "cancelled" } },
   );
   fireEvent.click(
@@ -116,15 +121,16 @@ it("adds a source node and opens its properties; cancelling an earlier add keeps
   );
   expect(calls.change).not.toHaveBeenCalled();
   await waitFor(() =>
-    expect(
-      screen.getByRole("button", { name: en.canvas.add_agent }),
-    ).toHaveFocus(),
+    expect(screen.getByRole("button", { name: en.v17.add_node })).toHaveFocus(),
   );
-  fireEvent.click(screen.getByRole("button", { name: en.canvas.add_agent }));
-  dialog = screen.getByRole("dialog", { name: en.canvas.add_agent });
+  fireEvent.click(screen.getByRole("button", { name: en.v17.add_node }));
+  dialog = screen.getByRole("dialog", { name: en.v17.add_node });
   fireEvent.change(
-    within(dialog).getByRole("textbox", { name: en.canvas.id }),
+    within(dialog).getByRole("textbox", { name: en.v17.node_name }),
     { target: { value: "custom" } },
+  );
+  fireEvent.click(
+    within(dialog).getByRole("tab", { name: en.v17.instructions }),
   );
   fireEvent.change(
     within(dialog).getByRole("textbox", { name: en.canvas.instructions }),
@@ -135,7 +141,7 @@ it("adds a source node and opens its properties; cancelling an earlier add keeps
   expect(screen.getByTestId("canvas-properties")).toBeInTheDocument();
   expect(
     within(screen.getByTestId("canvas-properties")).getByRole("textbox", {
-      name: en.canvas.id,
+      name: en.v17.node_name,
     }),
   ).toHaveValue("custom");
 });
@@ -143,11 +149,14 @@ it.each(["permission", "request", "capability"])(
   "blocks the actual form and forced connection handlers after losing %s",
   (reason) => {
     const view = render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: en.canvas.add_agent }));
-    const dialog = screen.getByRole("dialog", { name: en.canvas.add_agent });
+    fireEvent.click(screen.getByRole("button", { name: en.v17.add_node }));
+    const dialog = screen.getByRole("dialog", { name: en.v17.add_node });
     fireEvent.change(
-      within(dialog).getByRole("textbox", { name: en.canvas.id }),
+      within(dialog).getByRole("textbox", { name: en.v17.node_name }),
       { target: { value: "not_written" } },
+    );
+    fireEvent.click(
+      within(dialog).getByRole("tab", { name: en.v17.instructions }),
     );
     fireEvent.change(
       within(dialog).getByRole("textbox", { name: en.canvas.instructions }),
@@ -155,12 +164,12 @@ it.each(["permission", "request", "capability"])(
     );
     view.rerender(<Harness canEdit={false} reason={reason} />);
     expect(
-      within(dialog).getByRole("textbox", { name: en.canvas.id }),
+      within(dialog).getByRole("textbox", { name: en.canvas.instructions }),
     ).toBeDisabled();
     fireEvent.submit(within(dialog).getByTestId("canvas-node-form"));
     calls.connect?.("alpha", "beta");
     calls.reconnect?.("edge", "alpha", "beta");
-    calls.buttons.get(en.canvas.add_agent)?.();
+    calls.buttons.get(en.v17.add_node)?.();
     calls.buttons.get(en.canvas.undo)?.();
     expect(calls.change).not.toHaveBeenCalled();
     expect(calls.undo).not.toHaveBeenCalled();
@@ -172,11 +181,9 @@ it("retains invalid YAML and the previous read-only graph without writing from i
   fireEvent.click(screen.getByRole("button", { name: "Invalid YAML input" }));
   expect(screen.getByText(en.canvas.stale)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "alpha" })).toBeInTheDocument();
-  expect(
-    screen.getByRole("button", { name: en.canvas.add_agent }),
-  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: en.v17.add_node })).toBeDisabled();
   calls.connect?.("alpha", "beta");
-  calls.buttons.get(en.canvas.add_agent)?.();
+  calls.buttons.get(en.v17.add_node)?.();
   expect(calls.change).not.toHaveBeenCalled();
   expect(screen.getByTestId("source").textContent).toBe(
     "kind: gitlab_yaml\nstages: [",
@@ -186,7 +193,7 @@ it("ignores Delete in an input, confirms deletion from the node and supports can
   render(<Harness />);
   fireEvent.click(screen.getByRole("button", { name: "alpha" }));
   const properties = screen.getByTestId("canvas-properties"),
-    id = within(properties).getByRole("textbox", { name: en.canvas.id });
+    id = within(properties).getByRole("textbox", { name: en.v17.node_name });
   id.focus();
   fireEvent.keyDown(id, { key: "Delete" });
   expect(
@@ -222,7 +229,7 @@ it("does not expose executor fields for a Hermes manual gate", () => {
       source={text}
       scope="w:s:h"
       canEdit
-      roles={[]}
+      candidates={testCandidates}
       onChange={calls.change}
       onShowYAML={() => {}}
       onUndo={calls.undo}
@@ -233,11 +240,12 @@ it("does not expose executor fields for a Hermes manual gate", () => {
   );
   fireEvent.click(screen.getByRole("button", { name: "work.gate.review" }));
   const properties = within(screen.getByTestId("canvas-properties"));
+  fireEvent.click(properties.getByText(en.v17.advanced));
   expect(
     properties.getByRole("textbox", { name: en.canvas.gate_id }),
   ).toHaveValue("review");
   expect(
-    properties.queryByRole("combobox", { name: en.canvas.role }),
+    properties.queryByRole("combobox", { name: en.v17.executor }),
   ).not.toBeInTheDocument();
   expect(properties.queryByRole("spinbutton")).not.toBeInTheDocument();
   expect(
@@ -255,7 +263,7 @@ it("edits the supported GitLab manual failure policy without exposing executor c
       source={source}
       scope="w:s:g"
       canEdit
-      roles={[]}
+      candidates={testCandidates}
       onChange={calls.change}
       onShowYAML={() => {}}
       onUndo={calls.undo}
@@ -266,6 +274,7 @@ it("edits the supported GitLab manual failure policy without exposing executor c
   );
   fireEvent.click(screen.getByRole("button", { name: "gate" }));
   const properties = within(screen.getByTestId("canvas-properties"));
+  fireEvent.click(properties.getByText(en.v17.advanced));
   fireEvent.click(
     properties.getByRole("checkbox", { name: en.canvas.allow_failure }),
   );
@@ -273,4 +282,41 @@ it("edits the supported GitLab manual failure policy without exposing executor c
   expect(calls.change).toHaveBeenCalledOnce();
   expect(calls.change.mock.calls[0]![0]).toContain("allow_failure: true");
   expect(properties.queryByRole("spinbutton")).not.toBeInTheDocument();
+});
+it("retains unapplied properties across selections and makes source conflicts explicit", () => {
+  render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "alpha" }));
+  let form = within(screen.getByTestId("canvas-properties"));
+  fireEvent.change(form.getByRole("textbox", { name: en.v17.node_name }), {
+    target: { value: "Retained name" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "beta" }));
+  fireEvent.click(screen.getByRole("button", { name: "alpha" }));
+  form = within(screen.getByTestId("canvas-properties"));
+  expect(form.getByRole("textbox", { name: en.v17.node_name })).toHaveValue(
+    "Retained name",
+  );
+  expect(calls.change).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Invalid YAML input" }));
+  fireEvent.submit(form.getByTestId("canvas-node-form"));
+  expect(calls.change).not.toHaveBeenCalled();
+});
+it("never invents candidate identities when candidate loading is unavailable", () => {
+  render(
+    <DefinitionCanvas
+      source={original}
+      scope="w:s:missing"
+      canEdit
+      candidates={null}
+      onChange={calls.change}
+      onShowYAML={() => {}}
+      onUndo={calls.undo}
+      onRedo={calls.redo}
+      canUndo={false}
+      canRedo={false}
+    />,
+  );
+  expect(screen.getByRole("button", { name: en.v17.add_node })).toBeDisabled();
+  calls.connect?.("alpha", "beta");
+  expect(calls.change).not.toHaveBeenCalled();
 });

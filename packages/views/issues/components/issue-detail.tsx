@@ -34,13 +34,14 @@ import {
   Unlink,
   Users,
   ArrowDown,
+  XIcon,
 } from "@multica/ui/icons";
 import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Button } from "@multica/ui/components/ui/button";
 import { IconButton } from "@multica/ui/components/common/icon-button";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@multica/ui/components/ui/resizable";
-import { Sheet, SheetContent } from "@multica/ui/components/ui/sheet";
+import { Sheet, SheetContent, SheetClose, SheetTitle } from "@multica/ui/components/ui/sheet";
 import { useIsMobile } from "@multica/ui/hooks/use-mobile";
 import { ContentEditor, type ContentEditorRef, TitleEditor, type TitleEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useEditorUpload, PreviewSequenceProvider, collectPreviewSequence } from "../../editor";
 import {
@@ -119,7 +120,7 @@ import { QuickActionsSection } from "./quick-actions-section";
 import { PluginPanelSection } from "../../plugins";
 import { PullRequestsSection } from "./pull-requests-section";
 import { useGitHubSettings } from "@multica/core/github";
-import { IssuePipelineCard } from "../../pipelines/run-details";
+import { IssuePipelineCard } from "../../pipelines/issue-progress";
 import { IssueDocuments } from "../../projects/documents/associate-document";
 import { DeliverablesSection } from "./deliverables/deliverables-section";
 import { DeliverablesOverview } from "./deliverables/deliverables-overview";
@@ -186,6 +187,7 @@ import { IssueSidebarSectionHeader, IssueSidebarStack, IssueSidebarPropertyGrid 
 import { useT } from "../../i18n";
 import { useIssueDetailScrollRestore } from "../hooks/use-issue-detail-scroll-restore";
 import { useJumpToLatest } from "../hooks/use-jump-to-latest";
+import { useIssueInitialLatest } from "../hooks/use-issue-initial-latest";
 import { useInPageFind } from "../hooks/use-in-page-find";
 import { useStickyComposer } from "../hooks/use-sticky-composer";
 import { FindBar } from "./find-bar";
@@ -1316,6 +1318,7 @@ export function IssueDetailSkeleton({
 // IssueDetail
 
 export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction, variant = "page", trailingActions }: IssueDetailProps) {
+  const {t:tSquads}=useT("squads");
   const isPeek = variant === "peek";
   const { t } = useT("issues");
   const { t: tCommon } = useT("common");
@@ -1366,6 +1369,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     handleResize: handleDesktopSidebarResize,
   } = useAnimatedRightSidebarState(desktopSidebarInitialOpen);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const mobileSidebarTriggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (isMobile) {
@@ -1458,10 +1462,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // User preference: pin the bottom comment bar to the scroll viewport. Off
   // below `md` regardless of the preference — see the hook.
   const stickyComposer = useStickyComposer();
-  // Mobile only: desktop already reaches the latest entry through the
-  // ThreadMinimap rail, which is not rendered below `md`. Passing null keeps
-  // the hook's scroll and resize listeners off on desktop.
-  const jumpToLatest = useJumpToLatest(isMobile ? scrollContainerEl : null);
+  // The bounded jump also initializes ordinary visits. Explicit targets keep
+  // their own landing behavior.
+  const jumpToLatest = useJumpToLatest(scrollContainerEl);
 
   // Per-session: which resolved threads the user has temporarily expanded.
   // Not persisted (matches Linear) — reload collapses everything back to bars.
@@ -2672,6 +2675,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
   const handleToggleSidebar = useCallback(() => {
     if (isMobile) {
+      mobileSidebarTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setMobileSidebarOpen((open) => !open);
       return;
     }
@@ -2699,17 +2703,23 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
   useRightSidebarShortcut(rightSidebarShortcutTargetRef, handleToggleSidebar);
 
+  const openAtLatest = !isPeek && !highlightCommentId;
+  useIssueInitialLatest({
+    issueKey: `${wsId}:${id}`,
+    element: scrollContainerEl,
+    ready: !!issue && !loading && !timelineLoading,
+    enabled: openAtLatest && !find.open,
+    jump: jumpToLatest.jump,
+    cancel: jumpToLatest.cancel,
+  });
   useIssueDetailScrollRestore({
     restoreKey: `${wsId}:${id}`,
     scrollContainerEl,
     ready: !!issue && !loading && !timelineLoading,
-    // Disabled only while the comment deep link still has a landing to run —
-    // the jump owns the scroll then. Once the landing is consumed (a tab
-    // switch back), this hook's retry loop IS the restore: the one-shot
-    // ref-attach assignment clamps against a container whose async content
-    // (markdown, images) hasn't reached its captured height yet.
-    // A peek always opens at the top: it is a glance, not a place to return to.
-    disabled: isPeek || (!!highlightCommentId && consumedHighlightId !== highlightCommentId),
+    // Ordinary visits start at the latest content. Explicit comment targets
+    // own their first landing; consumed targets can restore a tab memento.
+    // Peeks keep their existing top-of-page behavior.
+    disabled: openAtLatest || isPeek || (!!highlightCommentId && consumedHighlightId !== highlightCommentId),
     // The tab memento's offset, when the platform serves one. It must win
     // over this hook's module-level map — see the parameter doc.
     overrideTop: restoredScrollTop,
@@ -3202,7 +3212,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
   const detailContent = (
     <CurrentIssueRenderContextProvider value={currentIssueRenderContext}>
-    <div className="relative flex h-full min-w-0 flex-1 flex-col">
+    <div className="relative flex h-full min-w-0 flex-1 flex-col" inert={isMobile && mobileSidebarOpen}>
         {/* In-page find bar — floats over the top-right of the content column
             (below the breadcrumb header), outside the scroll container so it
             stays put while the timeline scrolls and its own text isn't walked.
@@ -3906,7 +3916,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                       ref={virtuosoRef}
                       customScrollParent={scrollContainerEl}
                       data={items}
-                      initialScrollTop={restoredScrollTop}
+                      initialScrollTop={openAtLatest ? undefined : restoredScrollTop}
+                      initialTopMostItemIndex={openAtLatest && items.length ? {index: items.length - 1, align: "end"} : undefined}
                       increaseViewportBy={{ top: 800, bottom: 800 }}
                       computeItemKey={(_i, item) => `${item.kind}:${item.kind === "run" ? item.run.task.id : item.id}`}
                       skipAnimationFrameInResizeObserver
@@ -3948,7 +3959,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               composer's top edge. With the sticky composer it rides the
               composer itself; without it, a zero-height sticky anchor pins
               it to the viewport bottom until the composer scrolls in. */}
-          {!stickyComposer && jumpToLatest.visible && (
+          {isMobile && !stickyComposer && jumpToLatest.visible && (
             <div className="sticky bottom-0 z-10 h-0">
               <JumpToLatestButton onClick={jumpToLatest.jump} label={t(($) => $.timeline.jump_to_latest)} />
             </div>
@@ -3966,7 +3977,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 keeps the previous issue's in-memory content and the
                 next keystroke would flush it into the new issue's
                 draft key. */}
-            {stickyComposer && jumpToLatest.visible && (
+            {isMobile && stickyComposer && jumpToLatest.visible && (
               <JumpToLatestButton onClick={jumpToLatest.jump} label={t(($) => $.timeline.jump_to_latest)} />
             )}
             <CommentInput
@@ -4050,7 +4061,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       <div className="flex flex-1 min-h-0">
         {detailContent}
         <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-          <SheetContent side="right" showCloseButton={false} className="w-[320px] overflow-y-auto [scrollbar-gutter:stable] px-2 py-4">
+          <SheetContent side="right" showCloseButton={false} finalFocus={mobileSidebarTriggerRef} className="w-[320px] max-w-[100vw] overflow-y-auto [scrollbar-gutter:stable] px-2 py-4" data-testid="issue-properties-sheet">
+            <SheetTitle className="sr-only">{tSquads($=>$.v18.sidebar_title)}</SheetTitle>
+            <SheetClose render={<Button type="button" variant="ghost" size="icon-sm" className="self-end" aria-label={tSquads($=>$.v18.close_sidebar)}/>}><XIcon/></SheetClose>
             {sidebarContent}
           </SheetContent>
         </Sheet>

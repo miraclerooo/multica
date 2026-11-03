@@ -3,38 +3,64 @@ import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { createTestApi } from "./helpers";
 
-test.use({actionTimeout: 15_000});
-const check = expect.configure({timeout: 15_000});
-const yaml = "kind: gitlab_yaml\nstages: [research]\ncollect:\n  stage: research\n  instructions: Preserve this custom research instruction.\n";
-const hermes = "kind: hermes_yaml\nroles: {}\nstates:\n  collect:\n    entry: Preserve my separate Hermes instruction.\nedges: []\n";
+test.use({ actionTimeout: 15_000 });
+const check = expect.configure({ timeout: 15_000 });
+const yaml =
+  "kind: gitlab_yaml\nstages: [research]\ncollect:\n  stage: research\n  instructions: Preserve this custom research instruction.\n";
+const hermes =
+  "kind: hermes_yaml\nroles: {}\nstates:\n  collect:\n    entry: Preserve my separate Hermes instruction.\nedges: []\n";
 
 async function fixture(page: Page) {
   const api = await createTestApi();
   const workspace = (await api.getWorkspaces())[0]!;
   const project = await api.createProject("Named pipeline UI fixtures");
-  const seedIssue = await api.createIssue("Pipeline fixture identity", {project_id: project.id});
+  const seedIssue = await api.createIssue("Pipeline fixture identity", {
+    project_id: project.id,
+  });
   const agent = await api.seedDocumentAgent(seedIssue.id);
   async function post(path: string, body: unknown) {
-    const response = await api.request(path, {method: "POST", body: JSON.stringify(body)});
+    const response = await api.request(path, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
     check(response.status, await response.clone().text()).toBeLessThan(300);
     return response.json();
   }
-  const squad = await post("/api/squads", {name: "Selection research team", leader_id: agent.agentId});
-  const other = await post("/api/squads", {name: "Other selection team", leader_id: agent.agentId});
+  const squad = await post("/api/squads", {
+    name: "Selection research team",
+    leader_id: agent.agentId,
+  });
+  const other = await post("/api/squads", {
+    name: "Other selection team",
+    leader_id: agent.agentId,
+  });
   const issueIds: string[] = [];
   const errors: string[] = [];
-  page.on("pageerror", error => errors.push(error.message));
-  await page.addInitScript(token => {
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript((token) => {
     localStorage.setItem("multica_token", token!);
     localStorage.setItem("multica:chat:isOpen", "false");
-    localStorage.setItem("multica_create_mode", JSON.stringify({state: {lastMode: "manual"}, version: 0}));
+    localStorage.setItem(
+      "multica_create_mode",
+      JSON.stringify({ state: { lastMode: "manual" }, version: 0 }),
+    );
   }, api.getToken());
-  await page.setViewportSize({width: 1440, height: 1000});
-  await page.emulateMedia({colorScheme: "light", reducedMotion: "reduce"});
-  return {api, workspace, squad, other, agent, post, issueIds, errors,
-    report: (body: unknown) => post(`/api/daemon/runtimes/${agent.runtimeId}/build-report`, body),
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+  return {
+    api,
+    workspace,
+    squad,
+    other,
+    agent,
+    post,
+    issueIds,
+    errors,
+    report: (body: unknown) =>
+      post(`/api/daemon/runtimes/${agent.runtimeId}/build-report`, body),
     cleanup: async () => {
-      for (const id of issueIds) await api.request(`/api/issues/${id}`, {method: "DELETE"});
+      for (const id of issueIds)
+        await api.request(`/api/issues/${id}`, { method: "DELETE" });
       await api.removePipelineSquadFixture(squad.id);
       await api.removePipelineSquadFixture(other.id);
       await api.cleanup();
@@ -42,59 +68,156 @@ async function fixture(page: Page) {
   };
 }
 
-test("named catalogs keep independent source/version histories and an explicit squad default", async ({page}, info) => {
+test("named catalogs keep independent source/version histories and an explicit squad default", async ({
+  page,
+}, info) => {
   test.setTimeout(180_000);
   const f = await fixture(page);
   try {
     await page.goto(`/${f.workspace.slug}/squads/${f.squad.id}`);
-    await page.getByRole("button", {name: "Pipeline", exact: true}).click();
-    const area = page.getByTestId("pipeline-catalog");
-    const editor = area.getByRole("textbox", {name: "YAML", exact: true});
-    const name = area.getByRole("textbox", {name: "Pipeline name"});
-    await check(name).toBeVisible();
-    await area.getByRole("combobox", {name: "Squad default", exact: true}).selectOption("__choose__");
-    await check(name).toBeFocused();
-    const unchanged = await (await f.api.request(`/api/squads/${f.squad.id}`)).json();
+    await page.getByRole("button", { name: "Pipeline", exact: true }).click();
+    const area = page.getByTestId("pipeline-catalog"),
+      dialog = page.getByTestId("pipeline-editor-dialog");
+    await check(
+      area.getByRole("combobox", { name: "Squad default", exact: true }),
+    ).toHaveCount(0);
+    await check(
+      area.getByRole("combobox", { name: "Choose a pipeline", exact: true }),
+    ).toHaveCount(0);
+    const create = async (name: string, source: string) => {
+      await area
+        .getByRole("button", { name: "New pipeline", exact: true })
+        .click();
+      await dialog
+        .getByRole("textbox", { name: "Pipeline name", exact: true })
+        .fill(name);
+      await dialog.getByRole("tab", { name: "Source", exact: true }).click();
+      await dialog
+        .getByRole("textbox", { name: "YAML", exact: true })
+        .fill(source);
+      await check(
+        dialog.getByRole("button", { name: "Save version", exact: true }),
+      ).toBeEnabled();
+      const response = page.waitForResponse(
+        (r) =>
+          r.url().endsWith("/api/pipelines/catalog") &&
+          r.request().method() === "POST",
+      );
+      await dialog
+        .getByRole("button", { name: "Save version", exact: true })
+        .click();
+      const created = await (await response).json();
+      await check(dialog).toHaveCount(0);
+      return created;
+    };
+    const a = await create("Research", yaml),
+      b = await create("Hermes review", hermes);
+    const chooser = area.getByRole("combobox", {
+      name: "Choose a pipeline",
+      exact: true,
+    });
+    await check(chooser.locator("option")).toHaveCount(2);
+    await chooser.selectOption(a.pipeline.id);
+    const unchanged = await (
+      await f.api.request(`/api/squads/${f.squad.id}`)
+    ).json();
     check(unchanged.instructions_mode).toBe("markdown");
-    await name.fill("Research");await editor.fill(yaml);
-    await check(area.getByRole("button", {name: "Save version", exact: true})).toBeEnabled();
-    const createdA = page.waitForResponse(r => r.request().method() === "POST" && r.url().endsWith("/api/pipelines/catalog"));
-    await area.getByRole("button", {name: "Save version", exact: true}).click();
-    const a = await (await createdA).json();
-    await check(area.getByRole("combobox", {name: "Pipelines", exact: true})).toHaveValue(a.pipeline.id);
-    await area.getByRole("button", {name: "New pipeline", exact: true}).click();
-    await name.fill("Hermes review");await editor.fill(hermes);
-    await check(area.getByRole("button", {name: "Save version", exact: true})).toBeEnabled();
-    const createdB = page.waitForResponse(r => r.request().method() === "POST" && r.url().endsWith("/api/pipelines/catalog"));
-    await area.getByRole("button", {name: "Save version", exact: true}).click();
-    const b = await (await createdB).json();
-    await check(area.getByRole("combobox", {name: "Pipelines", exact: true})).toHaveValue(b.pipeline.id);
-    await area.getByRole("combobox", {name: "Pipelines", exact: true}).selectOption(a.pipeline.id);
+    await area
+      .getByRole("textbox", { name: "Pipeline name", exact: true })
+      .fill("Research renamed");
+    const rename = page.waitForResponse(
+      (r) =>
+        r.url().endsWith(`/api/pipelines/catalog/${a.pipeline.id}`) &&
+        r.request().method() === "PATCH",
+    );
+    await area.getByRole("button", { name: "Rename", exact: true }).click();
+    check((await rename).status()).toBe(200);
+    await area
+      .getByRole("button", { name: "Edit pipeline", exact: true })
+      .click();
+    await dialog.getByRole("tab", { name: "Source", exact: true }).click();
+    const editor = dialog.getByRole("textbox", { name: "YAML", exact: true });
     await check(editor).toHaveValue(yaml);
-    await name.fill("Research renamed");
-    await area.getByRole("button", {name: "Rename", exact: true}).click();
-    await editor.fill(yaml.replace("research instruction.", "research instruction v2."));
-    await check(area.getByRole("button", {name: "Save version", exact: true})).toBeEnabled();
-    const versionResponse = page.waitForResponse(r => r.request().method() === "POST" && r.url().endsWith("/api/pipelines/definitions"));
-    await area.getByRole("button", {name: "Save version", exact: true}).click();
-    const version = await (await versionResponse).json();
-    check(version.pipeline_id).toBe(a.pipeline.id);check(version.revision).toBe(2);
-    await area.getByRole("combobox", {name: "Squad default", exact: true}).selectOption(b.pipeline.id);
-    await check(area.getByText("Squad default saved")).toBeVisible();
-    const after = await (await f.api.request(`/api/squads/${f.squad.id}`)).json();
+    await editor.fill(
+      yaml.replace("research instruction.", "research instruction v2."),
+    );
+    await check(
+      dialog.getByRole("button", { name: "Save version", exact: true }),
+    ).toBeEnabled();
+    const response = page.waitForResponse(
+      (r) =>
+        r.url().endsWith("/api/pipelines/definitions") &&
+        r.request().method() === "POST",
+    );
+    await dialog
+      .getByRole("button", { name: "Save version", exact: true })
+      .click();
+    const version = await (await response).json();
+    check(version.pipeline_id).toBe(a.pipeline.id);
+    check(version.revision).toBe(2);
+    await check(dialog).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Execution mode", exact: true })
+      .click();
+    await page
+      .getByRole("combobox", { name: "Execution mode", exact: true })
+      .selectOption("pipeline");
+    await page
+      .getByRole("dialog")
+      .getByRole("combobox", { name: "Choose a pipeline", exact: true })
+      .selectOption(b.pipeline.id);
+    await page
+      .getByRole("button", { name: "Save squad default", exact: true })
+      .click();
+    await check(
+      page.getByRole("button", { name: "Execution mode", exact: true }),
+    ).toContainText("Pipeline");
+    const after = await (
+      await f.api.request(`/api/squads/${f.squad.id}`)
+    ).json();
     check(after.pipeline_definition_id).toBe(b.definition.id);
-    const bVersions = await (await f.api.request(`/api/pipelines/definitions?squad_id=${f.squad.id}&pipeline_id=${b.pipeline.id}`)).json();
-    check(bVersions.items).toHaveLength(1);check(bVersions.items[0].source).toBe(hermes);
-    await page.screenshot({animations: "disabled", style: "nextjs-portal { display: none !important; }", path: info.outputPath("catalog-desktop.png"), fullPage: true});
-    await page.setViewportSize({width:390,height:844});
-    await check(area.getByRole("combobox", {name: "Pipelines", exact: true})).toBeVisible();
-    check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({animations: "disabled", style: "nextjs-portal { display: none !important; }", path: info.outputPath("catalog-390.png"), fullPage: true});
+    const bVersions = await (
+      await f.api.request(
+        `/api/pipelines/definitions?squad_id=${f.squad.id}&pipeline_id=${b.pipeline.id}`,
+      )
+    ).json();
+    check(bVersions.items).toHaveLength(1);
+    check(bVersions.items[0].source).toBe(hermes);
+    await page.screenshot({
+      animations: "disabled",
+      style: "nextjs-portal {display:none!important}",
+      path: info.outputPath("catalog-desktop.png"),
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await check(chooser).toBeVisible();
+    check(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      animations: "disabled",
+      style: "nextjs-portal {display:none!important}",
+      path: info.outputPath("catalog-390.png"),
+    });
+    await area
+      .getByRole("button", { name: "Edit pipeline", exact: true })
+      .click();
+    await dialog.getByRole("tab", { name: "Source", exact: true }).click();
     await editor.scrollIntoViewIfNeeded();
-    await page.screenshot({animations: "disabled", style: "nextjs-portal { display: none !important; }", path: info.outputPath("catalog-editor-390.png"), fullPage: true});
-    await writeFile(info.outputPath("catalog-responses.json"),JSON.stringify({a,b,version,after,bVersions},null,2));
+    await page.screenshot({
+      animations: "disabled",
+      style: "nextjs-portal {display:none!important}",
+      path: info.outputPath("catalog-editor-390.png"),
+    });
+    await writeFile(
+      info.outputPath("catalog-responses.json"),
+      JSON.stringify({ a, b, version, after, bVersions }, null, 2),
+    );
     check(f.errors).toEqual([]);
-  } finally {await f.cleanup();}
+  } finally {
+    await f.cleanup();
+  }
 });
 
 test("creates one frozen issue, rechecks real compatibility and resumes the same selection", async ({page}, info) => {

@@ -11,6 +11,7 @@ import {
   usePipelineCanvasStore,
   type CanvasCommand,
   type CanvasDocument,
+  type PipelineCandidates,
 } from "@multica/core/pipelines";
 import { Button } from "@multica/ui/components/ui/button";
 import {
@@ -22,7 +23,7 @@ import {
   DialogDescription,
   DialogTrigger,
 } from "@multica/ui/components/ui/dialog";
-import { CanvasNodeForm, type CanvasRole } from "./canvas-node-form";
+import { CanvasNodeForm } from "./canvas-node-form";
 import { CanvasViewport } from "./canvas-viewport";
 import { useT } from "../i18n";
 
@@ -33,8 +34,7 @@ export function DefinitionCanvas({
   scope,
   canEdit,
   readOnlyReason,
-  roles,
-  emptyKinds = ["gitlab_yaml"],
+  candidates,
   onChange,
   onShowYAML,
   onUndo,
@@ -47,8 +47,7 @@ export function DefinitionCanvas({
   scope: string;
   canEdit: boolean;
   readOnlyReason?: string;
-  roles: CanvasRole[];
-  emptyKinds?: string[];
+  candidates?: PipelineCandidates | null;
   onChange: (source: string) => void;
   onShowYAML: () => void;
   onUndo: () => void;
@@ -71,10 +70,11 @@ export function DefinitionCanvas({
       (fallback?.restriction ? null : fallback) ??
       projection)
     : projection;
-  const writable = canEdit && !projection.restriction;
-  const [selected, setSelected] = useState<string>();
-  const [selectedEdge, setSelectedEdge] = useState<string>();
-  const [adding, setAdding] = useState<"agent" | "manual" | null>(null);
+  const writable = canEdit && !projection.restriction && !!candidates;
+  const [selected, setSelected] = useState<string>(),
+    [selectedEdge, setSelectedEdge] = useState<string>();
+  const [adding, setAdding] = useState(false),
+    [nodeType, setNodeType] = useState<"agent" | "manual">("agent");
   const [edgeDraft, setEdgeDraft] = useState<EdgeDraft | null>(null);
   const [pending, setPending] = useState<{
     command: CanvasCommand;
@@ -82,13 +82,23 @@ export function DefinitionCanvas({
     conversions: string[];
   } | null>(null);
   const [error, setError] = useState<Error | null>(null);
-  const addAgent = useRef<HTMLButtonElement>(null),
-    addGate = useRef<HTMLButtonElement>(null),
-    addEdge = useRef<HTMLButtonElement>(null),
-    nodePicker = useRef<HTMLSelectElement>(null);
-  const addFocus = useRef<"agent" | "manual">("agent");
+  const addNode = useRef<HTMLButtonElement>(null),
+    canvasRef = useRef<HTMLDivElement>(null);
   const node = model.nodes.find((n) => n.id === selected),
     edge = model.edges.find((e) => e.id === selectedEdge);
+  const focusCanvas = () => canvasRef.current?.focus({ preventScroll: true });
+  const focusNode = () => {
+    const target = Array.from(
+      canvasRef.current?.querySelectorAll<HTMLElement>("[data-canvas-node]") ??
+        [],
+    )
+      .find((el) => el.dataset.canvasNode === selected)
+      ?.querySelector<HTMLButtonElement>(".pipeline-node");
+    if (target) target.focus({ preventScroll: true });
+    else focusCanvas();
+  };
+  const name = (id: string) =>
+    model.nodes.find((n) => n.id === id)?.title || id;
   const errorText = (error: unknown) =>
     error instanceof CanvasEditError
       ? `${t(($) => $.canvas.errors[error.code])}${error.detail ? ` · ${error.detail}` : ""}`
@@ -104,8 +114,8 @@ export function DefinitionCanvas({
         command.type === "reconnect_edge"
           ? { ...command, confirmInferred: true }
           : command;
-      const result = applyCanvasEdit(source, input);
-      const conversions = canvasStageConversions(source, command);
+      const result = applyCanvasEdit(source, input),
+        conversions = canvasStageConversions(source, command);
       if (
         !confirmed &&
         (command.type === "delete_node" || conversions.length)
@@ -131,7 +141,7 @@ export function DefinitionCanvas({
         }
       } else if (command.type === "delete_node") {
         setSelected(undefined);
-        requestAnimationFrame(() => nodePicker.current?.focus());
+        requestAnimationFrame(focusCanvas);
       }
       setSelectedEdge(undefined);
       return true;
@@ -145,7 +155,7 @@ export function DefinitionCanvas({
     if (node) commit({ type: "delete_node", id: node.id });
     else if (edge) commit({ type: "delete_edge", id: edge.id });
   };
-  const beginEdge = (id?: string) => {
+  const beginEdge = (id?: string, from?: string, to?: string) => {
     if (!writable) return;
     const old = model.edges.find((e) => e.id === id);
     if (old?.kind === "gate") {
@@ -154,10 +164,11 @@ export function DefinitionCanvas({
     }
     setEdgeDraft({
       id,
-      from: old?.from ?? selected ?? model.nodes[0]?.id ?? "",
-      to: old?.to ?? model.nodes[1]?.id ?? "",
+      from: old?.from ?? from ?? selected ?? model.nodes[0]?.id ?? "",
+      to: old?.to ?? to ?? model.nodes.find((n) => n.id !== from)?.id ?? "",
       material: old?.kind === "material",
     });
+    setError(null);
   };
   const impact =
     pending?.command.type === "delete_node"
@@ -165,12 +176,13 @@ export function DefinitionCanvas({
       : null;
   return (
     <div
-      className="space-y-4 min-w-0"
+      ref={canvasRef}
+      tabIndex={-1}
+      className="space-y-4 min-w-0 outline-none"
       data-testid="pipeline-graph"
       onKeyDown={(e) => {
-        const target = e.target as HTMLElement;
         if (
-          target.closest(
+          (e.target as HTMLElement).closest(
             "input,textarea,select,[contenteditable=true],[role=dialog]",
           )
         )
@@ -183,11 +195,18 @@ export function DefinitionCanvas({
           }
           return;
         }
-        if (e.key === "Delete" || e.key === "Backspace") {
-          if (writable && (selected || selectedEdge)) {
-            e.preventDefault();
-            requestDelete();
-          }
+        if (e.key === "Escape") {
+          focusNode();
+          setSelected(undefined);
+          setSelectedEdge(undefined);
+        }
+        if (
+          (e.key === "Delete" || e.key === "Backspace") &&
+          writable &&
+          (selected || selectedEdge)
+        ) {
+          e.preventDefault();
+          requestDelete();
         }
       }}
     >
@@ -216,74 +235,67 @@ export function DefinitionCanvas({
         </p>
       )}
       <div className="pipeline-toolbar">
-        <Dialog
-          open={adding !== null}
-          onOpenChange={(open) => {
-            if (!open) setAdding(null);
-          }}
-        >
+        <Dialog open={adding} onOpenChange={setAdding}>
           <DialogTrigger
             render={
               <Button
-                ref={addAgent}
+                ref={addNode}
                 type="button"
                 size="sm"
                 disabled={!writable}
                 onClick={() => {
                   if (writable) {
-                    addFocus.current = "agent";
-                    setAdding("agent");
+                    setAdding(true);
                     setError(null);
                   }
                 }}
               />
             }
           >
-            {t(($) => $.canvas.add_agent)}
+            {t(($) => $.v17.add_node)}
           </DialogTrigger>
-          <Button
-            ref={addGate}
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={
-              !writable ||
-              (model.kind === "hermes_yaml" &&
-                !model.nodes.some((n) => n.type === "agent"))
-            }
-            onClick={() => {
-              if (writable) {
-                addFocus.current = "manual";
-                setAdding("manual");
-                setError(null);
-              }
-            }}
-          >
-            {t(($) => $.canvas.add_manual)}
-          </Button>
-          <DialogContent
-            className="sm:max-w-2xl"
-            finalFocus={addFocus.current === "manual" ? addGate : addAgent}
-          >
+          <DialogContent className="sm:max-w-2xl" finalFocus={addNode}>
             <DialogHeader>
-              <DialogTitle>
-                {adding === "manual"
-                  ? t(($) => $.canvas.add_manual)
-                  : t(($) => $.canvas.add_agent)}
-              </DialogTitle>
+              <DialogTitle>{t(($) => $.v17.add_node)}</DialogTitle>
             </DialogHeader>
+            <label className="grid gap-1 text-caption">
+              {t(($) => $.v17.node_type)}
+              <select
+                className="pipeline-select w-full"
+                value={nodeType}
+                disabled={!writable}
+                onChange={(e) => {
+                  if (writable)
+                    setNodeType(e.target.value as "agent" | "manual");
+                }}
+              >
+                <option value="agent">{t(($) => $.v17.agent)}</option>
+                <option
+                  value="manual"
+                  disabled={
+                    model.kind === "hermes_yaml" &&
+                    !model.nodes.some((n) => n.type === "agent")
+                  }
+                >
+                  {t(($) => $.v17.manual)}
+                </option>
+              </select>
+            </label>
             {adding && (
               <CanvasNodeForm
-                key={adding}
+                key={nodeType}
+                source={source}
+                formKey={`${scope}:node:new:${nodeType}`}
                 model={model}
-                nodeType={adding}
-                roles={roles}
+                nodeType={nodeType}
+                candidates={candidates}
                 disabled={!writable}
-                onCancel={() => setAdding(null)}
+                onCancel={() => setAdding(false)}
                 onApply={(fields) => {
-                  if (!writable) return;
-                  if (commit({ type: "add_node", nodeType: adding, fields }))
-                    setAdding(null);
+                  if (!writable) return false;
+                  const ok = commit({ type: "add_node", nodeType, fields });
+                  if (ok) setAdding(false);
+                  return ok;
                 }}
               />
             )}
@@ -294,16 +306,6 @@ export function DefinitionCanvas({
             )}
           </DialogContent>
         </Dialog>
-        <Button
-          ref={addEdge}
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!writable || model.nodes.length < 2}
-          onClick={() => beginEdge()}
-        >
-          {t(($) => $.canvas.add_edge)}
-        </Button>
         <Button
           type="button"
           size="sm"
@@ -326,46 +328,24 @@ export function DefinitionCanvas({
         >
           {t(($) => $.canvas.redo)}
         </Button>
-        <Button type="button" size="sm" variant="ghost" onClick={onShowYAML}>
-          {t(($) => $.canvas.read_yaml)}
-        </Button>
       </div>
-      {!source.trim() && (
-        <div className="pipeline-toolbar">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={!canEdit || !emptyKinds.includes("gitlab_yaml")}
-            onClick={() => {
-              if (canEdit && emptyKinds.includes("gitlab_yaml"))
-                onChange("kind: gitlab_yaml\nstages: []\n");
-            }}
-          >
-            {t(($) => $.canvas.blank_gitlab)}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={!canEdit || !emptyKinds.includes("hermes_yaml")}
-            onClick={() => {
-              if (canEdit && emptyKinds.includes("hermes_yaml"))
-                onChange(
-                  "kind: hermes_yaml\nroles: {}\nstates: {}\ngates: {}\nedges: []\n",
-                );
-            }}
-          >
-            {t(($) => $.canvas.blank_hermes)}
-          </Button>
-        </div>
-      )}
       <CanvasViewport
         model={model}
         scope={scope}
         selected={selected}
         selectedEdge={selectedEdge}
         canConnect={writable}
+        describeNode={(n) =>
+          n.type === "manual"
+            ? candidates?.humans.find((h) => h.user_id === n.ownerUserId)
+                ?.name ||
+              n.owner ||
+              t(($) => $.v17.no_owner)
+            : n.agentId
+              ? candidates?.agents.find((a) => a.agent_id === n.agentId)
+                  ?.name || t(($) => $.v17.binding_unavailable)
+              : n.role || t(($) => $.pipeline.leader)
+        }
         onSelect={(id) => {
           setSelected(id);
           setSelectedEdge(undefined);
@@ -374,6 +354,12 @@ export function DefinitionCanvas({
           setSelectedEdge(id);
           setSelected(undefined);
         }}
+        onClear={() => {
+          setSelected(undefined);
+          setSelectedEdge(undefined);
+        }}
+        onPort={(from, to) => beginEdge(undefined, from, to)}
+        onEditConnection={(id) => beginEdge(id)}
         onConnect={(from, to) => {
           if (writable) commit({ type: "add_edge", from, to });
         }}
@@ -381,49 +367,6 @@ export function DefinitionCanvas({
           if (writable) commit({ type: "reconnect_edge", id, from, to });
         }}
       />
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-1 text-caption">
-          {t(($) => $.canvas.select_node)}
-          <select
-            ref={nodePicker}
-            className="pipeline-select w-full"
-            value={selected ?? ""}
-            onChange={(e) => {
-              setSelected(e.target.value);
-              setSelectedEdge(undefined);
-            }}
-          >
-            <option value="">{t(($) => $.canvas.select_node)}</option>
-            {model.nodes.map((n) => (
-              <option key={n.id} value={n.id}>
-                {n.gateId
-                  ? `${n.gateId} · ${n.sourceId}`
-                  : n.title && n.title !== n.id
-                    ? `${n.title} · ${n.id}`
-                    : n.id}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="grid gap-1 text-caption">
-          {t(($) => $.canvas.select_edge)}
-          <select
-            className="pipeline-select w-full"
-            value={selectedEdge ?? ""}
-            onChange={(e) => {
-              setSelectedEdge(e.target.value);
-              setSelected(undefined);
-            }}
-          >
-            <option value="">{t(($) => $.canvas.select_edge)}</option>
-            {model.edges.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.from} → {e.to} · {e.kind}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
       {node && (
         <section
           className="pipeline-box space-y-4"
@@ -431,7 +374,7 @@ export function DefinitionCanvas({
         >
           <div className="pipeline-toolbar justify-between">
             <h3>
-              {t(($) => $.canvas.node_properties)} · {node.title || node.id}
+              {t(($) => $.canvas.node_properties)} · {node.title}
             </h3>
             <Button
               type="button"
@@ -444,20 +387,21 @@ export function DefinitionCanvas({
             </Button>
           </div>
           <CanvasNodeForm
-            key={`${node.id}:${source}`}
+            key={node.id}
+            source={source}
+            formKey={`${scope}:node:${node.id}`}
             model={model}
             node={node}
             nodeType={node.type}
-            roles={roles}
+            candidates={candidates}
             disabled={!writable}
             onCancel={() => {
+              focusNode();
               setSelected(undefined);
-              nodePicker.current?.focus();
             }}
-            onApply={(fields) => {
-              if (writable)
-                commit({ type: "update_node", id: node.id, fields });
-            }}
+            onApply={(fields) =>
+              writable && commit({ type: "update_node", id: node.id, fields })
+            }
           />
         </section>
       )}
@@ -467,7 +411,7 @@ export function DefinitionCanvas({
           data-testid="canvas-edge-properties"
         >
           <h3>
-            {edge.from} → {edge.to} · {edge.kind}
+            {name(edge.from)} → {name(edge.to)} · {edge.kind}
           </h3>
           {edge.kind === "gate" ? (
             <p className="pipeline-metadata">
@@ -503,7 +447,7 @@ export function DefinitionCanvas({
           if (!open) setEdgeDraft(null);
         }}
       >
-        <DialogContent finalFocus={addEdge}>
+        <DialogContent finalFocus={canvasRef}>
           <DialogHeader>
             <DialogTitle>
               {edgeDraft?.id
@@ -546,7 +490,7 @@ export function DefinitionCanvas({
                   >
                     {model.nodes.map((n) => (
                       <option key={n.id} value={n.id}>
-                        {n.id}
+                        {n.title}
                       </option>
                     ))}
                   </select>
@@ -569,7 +513,7 @@ export function DefinitionCanvas({
                           model.kind === "hermes_yaml" && n.type === "manual"
                         }
                       >
-                        {n.id}
+                        {n.title}
                       </option>
                     ))}
                   </select>
@@ -617,7 +561,7 @@ export function DefinitionCanvas({
           if (!open) setPending(null);
         }}
       >
-        <DialogContent finalFocus={nodePicker}>
+        <DialogContent finalFocus={canvasRef}>
           <DialogHeader>
             <DialogTitle>
               {impact
@@ -633,13 +577,14 @@ export function DefinitionCanvas({
           <div className="space-y-2 text-caption break-words">
             <p>
               {t(($) => $.canvas.affected)}:{" "}
-              {impact?.nodes.join(", ") || pending?.conversions.join(", ")}
+              {impact?.nodes.map(name).join(", ") ||
+                pending?.conversions.map(name).join(", ")}
             </p>
             {impact && (
               <ul className="list-disc pl-4">
                 {impact.edges.map((e) => (
                   <li key={e.id}>
-                    {e.from} → {e.to} · {e.kind}
+                    {name(e.from)} → {name(e.to)} · {e.kind}
                   </li>
                 ))}
               </ul>

@@ -35,11 +35,19 @@ export const pipelineCatalogAllOptions = (wsId: string, squadId: string) => quer
   }, enabled: !!squadId,
 });
 export const pipelineCatalogItemOptions = (wsId: string, id: string) => queryOptions({queryKey: pipelineKeys.catalogItem(wsId, id), queryFn: () => api.getPipelineCatalog(id), enabled: !!id});
-export const issueExecutionOptions = (wsId: string, issueId: string) => queryOptions({queryKey: pipelineKeys.execution(wsId, issueId), queryFn: () => api.getIssueExecution(issueId), enabled: !!issueId});
+export const issueExecutionOptions = (wsId: string, issueId: string) => queryOptions({queryKey: pipelineKeys.execution(wsId, issueId), queryFn: async () => {
+  const response = await api.getIssueExecution(issueId);
+  if (!response) throw new Error("Invalid pipeline execution response");
+  return response;
+}, enabled: !!issueId});
 export const pipelineDefinitionsOptions = (wsId: string, input: PipelineListInput) => queryOptions({ queryKey: pipelineKeys.definitions(wsId, input), queryFn: () => api.listPipelineDefinitions(input) });
 export const pipelineDefinitionOptions = (wsId: string, id: string) => queryOptions({ queryKey: pipelineKeys.definition(wsId, id), queryFn: () => api.getPipelineDefinition(id), enabled: !!id });
 export const pipelineRunsOptions = (wsId: string, input: PipelineListInput) => queryOptions({ queryKey: pipelineKeys.runs(wsId, input), queryFn: () => api.listPipelineRuns(input) });
-export const pipelineRunOptions = (wsId: string, id: string) => queryOptions({ queryKey: pipelineKeys.run(wsId, id), queryFn: () => api.getPipelineRun(id), enabled: !!id });
+export const pipelineRunOptions = (wsId: string, id: string) => queryOptions({ queryKey: pipelineKeys.run(wsId, id), queryFn: async ({signal}) => {
+  const run = await api.getPipelineRun(id, {signal});
+  if (!run || run.id !== id || run.workspace_id !== wsId) throw new Error("Invalid pipeline run response");
+  return run;
+}, enabled: !!id });
 export const pipelineJobOptions = (wsId: string, id: string, job: string) => queryOptions({ queryKey: pipelineKeys.job(wsId, id, job), queryFn: () => api.getPipelineJob(id, job), enabled: !!id && !!job });
 export const pipelineArtifactsOptions = (wsId: string, id: string, input: PipelineListInput = {}) => queryOptions({ queryKey: pipelineKeys.artifacts(wsId, id, input), queryFn: () => api.listPipelineArtifacts(id, input), enabled: !!id });
 
@@ -63,3 +71,27 @@ export function useCreatePipelineRun(wsId: string) { const invalidate = usePipel
 export function usePipelineDecision(wsId: string, id: string, job: string) { const invalidate = usePipelineInvalidation(wsId); return useMutation({ mutationFn: (input: PipelineDecisionInput) => api.decidePipelineJob(id, job, input), onSettled: invalidate }); }
 export function useRetryPipelineJob(wsId: string, id: string, job: string) { const invalidate = usePipelineInvalidation(wsId); return useMutation({ mutationFn: (input: PipelineRevisionInput) => api.retryPipelineJob(id, job, input), onSettled: invalidate }); }
 export function useCancelPipelineRun(wsId: string, id: string) { const invalidate = usePipelineInvalidation(wsId); return useMutation({ mutationFn: (input: {reason: string; idempotency_key: string}) => api.cancelPipelineRun(id, input), onSettled: invalidate }); }
+
+// Read every page so default activity and explicit history selection do not
+// depend on the first page's size. Individual details use pipelineKeys.run.
+export const issuePipelineRunsOptions = (wsId: string, issueId: string) => queryOptions({
+  queryKey: [...pipelineKeys.runs(wsId, {issue_id: issueId}), "all"],
+  queryFn: async ({signal}) => {
+    const runs = new Map<string, import("./schema").PipelineRun>();
+    for (let offset = 0; ; ) {
+      const page = await api.listPipelineRuns({issue_id: issueId, limit: 50, offset}, {signal});
+      if (page.limit <= 0 || page.offset !== offset ||
+        page.items.some(run => run.workspace_id !== wsId || run.issue_id !== issueId))
+        throw new Error("Invalid pipeline run list response");
+      const previous = runs.size;
+      for (const run of page.items) {
+        const old = runs.get(run.id);
+        if (!old || run.revision >= old.revision) runs.set(run.id, run);
+      }
+      if (page.items.length < page.limit) return [...runs.values()];
+      if (runs.size === previous) throw new Error("Invalid pipeline run pagination");
+      offset += page.items.length;
+    }
+  },
+  enabled: !!wsId && !!issueId,
+});

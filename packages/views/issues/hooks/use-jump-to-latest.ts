@@ -94,7 +94,8 @@ export function useJumpToLatest(scrollContainerEl: HTMLElement | null) {
     frame = requestAnimationFrame(tick);
   }, [scrollContainerEl]);
 
-  return { visible, jump };
+  const cancel = useCallback(() => cancelJumpRef.current?.(), []);
+  return { visible, jump, cancel };
 }
 
 /**

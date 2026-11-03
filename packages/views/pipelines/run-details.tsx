@@ -12,7 +12,6 @@ import { taskMessagesOptions } from "@multica/core/chat/queries";
 import {
   memberListOptions,
   agentListOptions,
-  workspaceKeys,
 } from "@multica/core/workspace/queries";
 import {
   usePipelineReviewStore,
@@ -27,12 +26,10 @@ import {
   useCancelPipelineRun,
   usePipelineDecision,
   useRetryPipelineJob,
-  useCreatePipelineRun,
   type PipelineArtifact,
   type PipelineJob,
   type PipelineRun,
 } from "@multica/core/pipelines";
-import type { Issue } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
 import {
   Dialog,
@@ -49,100 +46,6 @@ import { BreadcrumbHeader } from "../layout/breadcrumb-header";
 import { AssociateDocument } from "../projects/documents/associate-document";
 import { FlowGraph } from "./flow-graph";
 import "./pipelines.css";
-import { IssueExecutionPanel } from "./execution-summary";
-
-export function IssuePipelineCard({ issue }: { issue: Issue }) {
-  const { t } = useT("squads");
-  const wsId = useWorkspaceId();
-  const paths = useWorkspacePaths();
-  const runs = useQuery(
-    pipelineRunsOptions(wsId, { issue_id: issue.id, limit: 5 }),
-  );
-  const squad = useQuery({
-    queryKey: [...workspaceKeys.squads(wsId), issue.assignee_id],
-    queryFn: () => api.getSquad(issue.assignee_id!),
-    enabled: issue.assignee_type === "squad" && !!issue.assignee_id,
-  });
-  const start = useCreatePipelineRun(wsId);
-  const member = useCurrentMember(wsId);
-  const operation = useRef(crypto.randomUUID());
-  if (!issue.execution && !runs.data?.items.length && squad.data?.instructions_mode !== "pipeline")
-    return null;
-  return (
-    <section
-      className="pipeline-box space-y-3"
-      data-testid="issue-pipeline-card"
-    >
-      <h3>{t(($) => $.pipeline.title)}</h3>
-      {issue.execution && <IssueExecutionPanel issueId={issue.id} />}
-      {runs.isError && (
-        <p role="alert" className="pipeline-error">
-          {t(($) => $.pipeline.failed)}
-        </p>
-      )}
-      {runs.data?.items.map((run) => (
-        <AppLink
-          className="block pipeline-material hover:bg-accent text-caption"
-          key={run.id}
-          href={paths.pipelineRun(run.id)}
-        >
-          <strong>
-            {run.status} · {run.plan.kind}
-          </strong>
-          <span>
-            {run.jobs
-              .filter(
-                (j) =>
-                  !["succeeded", "skipped", "cancelled"].includes(j.status),
-              )
-              .map((j) => j.node.title || j.node.id)
-              .join(", ")}
-          </span>
-          <span className="pipeline-metadata">{run.created_at}</span>
-        </AppLink>
-      ))}
-      {!runs.isLoading && !runs.isError && !runs.data?.items.length && (
-        <p className="pipeline-metadata">{t(($) => $.pipeline.no_runs)}</p>
-      )}
-      {!issue.execution && squad.data?.instructions_mode === "pipeline" &&
-        issue.assignee_id &&
-        member.member &&
-        !runs.data?.items.some((r) =>
-          ["running", "waiting_approval", "blocked", "cancelling"].includes(
-            r.status,
-          ),
-        ) && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={start.isPending}
-            onClick={() =>
-              start.mutate(
-                {
-                  issue_id: issue.id,
-                  squad_id: issue.assignee_id!,
-                  idempotency_key: operation.current,
-                },
-                {
-                  onSuccess: (result) => {
-                    if (result) operation.current = crypto.randomUUID();
-                  },
-                },
-              )
-            }
-          >
-            {t(($) => $.pipeline.start_run)}
-          </Button>
-        )}
-      {start.error && (
-        <p role="alert" className="pipeline-error">
-          {start.error.message}
-        </p>
-      )}
-      {!!runs.data?.items.length && <PipelineHistory issueId={issue.id} />}
-    </section>
-  );
-}
 
 export function PipelineHistory({
   issueId,
@@ -256,7 +159,7 @@ function Usage({ run }: { run: PipelineRun }) {
   );
 }
 
-export function PipelineRunDetails({ runId }: { runId: string }) {
+export function PipelineRunDetails({ runId, nodeFirst = false }: { runId: string; nodeFirst?: boolean }) {
   const { t } = useT("squads");
   const wsId = useWorkspaceId();
   const currentMember = useCurrentMember(wsId);
@@ -298,6 +201,7 @@ export function PipelineRunDetails({ runId }: { runId: string }) {
     snapshot.jobs.find((j) => j.status === "waiting_approval") ??
     snapshot.jobs[0];
   const actions = pipelineRunActions(snapshot);
+  const graph = <FlowGraph plan={snapshot.plan} run={snapshot} selected={job?.node.id} onSelect={setSelected} />;
   return (
     <div
       className="pipeline-panel space-y-4 max-w-7xl mx-auto"
@@ -317,22 +221,27 @@ export function PipelineRunDetails({ runId }: { runId: string }) {
             {t(($) => $.pipeline.refresh)}
           </Button>
           {currentMember.member && (actions.cancel || actions.restriction) && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!actions.cancel || cancel.isPending}
-                onClick={() => {
-                  if (!actions.cancel || !currentMember.member || cancel.isPending) return;
-                  if (window.confirm(t(($) => $.pipeline.cancel_confirm)))
-                    cancel.mutate({
-                      reason: "Cancelled from pipeline view",
-                      idempotency_key: cancelKey.current,
-                    });
-                }}
-              >
-                {t(($) => $.pipeline.cancel_run)}
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!actions.cancel || cancel.isPending}
+              onClick={() => {
+                if (
+                  !actions.cancel ||
+                  !currentMember.member ||
+                  cancel.isPending
+                )
+                  return;
+                if (window.confirm(t(($) => $.pipeline.cancel_confirm)))
+                  cancel.mutate({
+                    reason: "Cancelled from pipeline view",
+                    idempotency_key: cancelKey.current,
+                  });
+              }}
+            >
+              {t(($) => $.pipeline.cancel_run)}
+            </Button>
+          )}
         </div>
       </div>
       {actions.restriction && (
@@ -355,12 +264,7 @@ export function PipelineRunDetails({ runId }: { runId: string }) {
           {cancel.error.message}
         </p>
       )}
-      <FlowGraph
-        plan={snapshot.plan}
-        run={snapshot}
-        selected={job?.node.id}
-        onSelect={setSelected}
-      />
+      {!nodeFirst && graph}
       {job && (
         <JobDetails
           key={job.node.id}
@@ -369,6 +273,7 @@ export function PipelineRunDetails({ runId }: { runId: string }) {
           canOperate={!!currentMember.member}
         />
       )}
+      {nodeFirst && graph}
       <ArtifactCatalog run={snapshot} />
     </div>
   );
@@ -458,11 +363,18 @@ function JobDetails({
               : t(($) => $.pipeline.manual)
             : name(attempt?.executor_id ?? job.executor_id) || "—"}
           {job.node.type === "agent" &&
+            !job.node.agent_id &&
             ` · ${job.node.role || t(($) => $.pipeline.leader)}`}
         </p>
-        {job.node.owner && (
+        {(job.node.owner_user_id || job.node.owner) && (
           <p className="pipeline-metadata">
-            {t(($) => $.pipeline.owner)}: {job.node.owner}
+            {job.node.owner_user_id
+              ? t(($) => $.v17.human_owner)
+              : t(($) => $.pipeline.owner)}
+            :{" "}
+            {job.node.owner_user_id
+              ? name(job.node.owner_user_id)
+              : job.node.owner}
           </p>
         )}
         <pre className="text-caption whitespace-pre-wrap break-words max-h-60 overflow-y-auto">
@@ -600,7 +512,9 @@ function JobDetails({
                     className="mt-2 w-full rounded-md border p-3 text-body bg-background"
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
-                    readOnly={!canOperate || !!actions.restriction || decision.isPending}
+                    readOnly={
+                      !canOperate || !!actions.restriction || decision.isPending
+                    }
                   />
                 </label>
                 {!reason.trim() && (
@@ -636,11 +550,23 @@ function JobDetails({
             )}
           </>
         )}
-        {job.node.paths.map((path) => (
-          <p key={path} className="pipeline-metadata">
-            {t(($) => $.pipeline.declared)}: <code>{path}</code>
-          </p>
-        ))}
+        {job.node.paths.map((path) => {
+          const file = job.node.deliverables.find((d) => d.path === path);
+          return (
+            <div key={path} className="space-y-1">
+              <p className="pipeline-metadata">
+                {t(($) => $.pipeline.declared)}:{" "}
+                <strong>{file?.name || path}</strong>
+              </p>
+              {file?.description && (
+                <p className="whitespace-pre-wrap break-words">
+                  {file.description}
+                </p>
+              )}
+              <code className="text-caption break-all">{path}</code>
+            </div>
+          );
+        })}
         <AppLink
           className="text-caption underline"
           href={paths.issueDetail(run.issue_id)}
@@ -745,7 +671,13 @@ function ArtifactMaterial({
   const [open, setOpen] = useState(false);
   return (
     <div className="pipeline-material text-caption">
-      <strong>{a.path}</strong>
+      <strong>{a.name || a.path}</strong>
+      {a.description && (
+        <p className="whitespace-pre-wrap break-words">{a.description}</p>
+      )}
+      {a.name && a.name !== a.path && (
+        <code className="pipeline-metadata break-all">{a.path}</code>
+      )}
       <span className="pipeline-metadata">
         {a.job_id} · {t(($) => $.pipeline.attempt)} {a.attempt} · {a.status}
       </span>
@@ -780,7 +712,8 @@ function ArtifactMaterial({
                 attempt: a.attempt,
                 path: a.path,
               }}
-              label={a.path}
+              label={a.name || a.path}
+              description={a.description}
             />
           )}
         </div>

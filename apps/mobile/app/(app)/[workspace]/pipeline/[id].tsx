@@ -173,7 +173,11 @@ function RunDetails({ run }: { run: PipelineRun }) {
           {run.status} · {run.reason}
         </Text>
         {actions.restriction && (
-          <Text accessibilityRole="alert" className="text-destructive" selectable>
+          <Text
+            accessibilityRole="alert"
+            className="text-destructive"
+            selectable
+          >
             {actions.restriction.code === "status"
               ? t("pipeline.readonly_status")
               : actions.restriction.code === "job_status"
@@ -207,7 +211,10 @@ function RunDetails({ run }: { run: PipelineRun }) {
                 {j.node.title || j.node.id} · {j.status}
               </Text>
               <Text className="text-xs text-muted-foreground">
-                {j.node.role || t("pipeline.leader")} · {j.reason}
+                {j.node.agent_id
+                  ? getName("agent", j.node.agent_id)
+                  : j.node.role || t("pipeline.leader")}{" "}
+                · {j.reason}
               </Text>
             </View>
           </Button>
@@ -323,7 +330,9 @@ function RunDetails({ run }: { run: PipelineRun }) {
                     multiline
                     value={reason}
                     onChangeText={setReason}
-                    editable={!!user && !actions.restriction && !decision.isPending}
+                    editable={
+                      !!user && !actions.restriction && !decision.isPending
+                    }
                     className="min-h-28 rounded-lg border border-border p-3 text-base text-foreground"
                     style={{ textAlignVertical: "top" }}
                   />
@@ -400,7 +409,13 @@ function Material({
   const { t } = useT("issues");
   return (
     <View className="gap-2 rounded-lg bg-muted p-3">
-      <Text>{a.path}</Text>
+      <Text selectable>{a.name || a.path}</Text>
+      {!!a.description && <Text selectable>{a.description}</Text>}
+      {!!a.name && a.name !== a.path && (
+        <Text selectable className="text-xs text-muted-foreground">
+          {a.path}
+        </Text>
+      )}
       <Text selectable className="text-xs text-muted-foreground">
         {a.job_id} · {t("pipeline.attempt")} {a.attempt} · {a.status} ·{" "}
         {a.sha || a.attachment_id || `v${a.document_version ?? "—"}`}
