@@ -262,7 +262,7 @@ states:
   }
 });
 
-test("opens fixed materials, links Markdown idempotently, groups tasks and handles real approval conflicts at 390px", async ({
+test("opens fixed materials, links Markdown idempotently, searches related tasks and handles real approval conflicts at 390px", async ({
   page,
 }, info) => {
   test.setTimeout(180_000);
@@ -316,6 +316,9 @@ test("opens fixed materials, links Markdown idempotently, groups tasks and handl
     expect(newVersion.ok).toBeTruthy();
     await page.goto(`/${f.workspace.slug}/pipelines/${run.id}`, {
       waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByTestId("pipeline-run-details")).toBeVisible({
+      timeout: 30000,
     });
     await expect(
       page.getByRole("button", { name: "Approve", exact: true }),
@@ -433,7 +436,7 @@ test("opens fixed materials, links Markdown idempotently, groups tasks and handl
     await expect(page.getByTestId("pipeline-run-details")).toContainText(
       "Recorded decision",
     );
-    await expect(page.getByLabel("Draft retained")).toHaveValue(
+    await expect(page.getByLabel("Restore kept draft")).toHaveValue(
       "My retained review comment",
     );
     await page.goto(
@@ -450,9 +453,10 @@ test("opens fixed materials, links Markdown idempotently, groups tasks and handl
       .getByRole("button", { name: "Project documents", exact: true })
       .click();
     const directory = page.getByRole("dialog", { name: "Project documents" });
-    const taskGroup = directory.locator(`[data-issue-id="${f.issue.id}"]`);
-    await expect(taskGroup).toContainText("Custom pipeline UI verification");
-    await expect(taskGroup).toContainText("Pinned findings");
+    await expect(directory).not.toContainText("Custom pipeline UI verification");
+    await expect(
+      directory.getByRole("link", { name: "Pinned findings", exact: true }),
+    ).toHaveCount(1);
     const [filtered] = await Promise.all([
       page.waitForResponse((response) => {
         const url = new URL(response.url());
@@ -466,7 +470,9 @@ test("opens fixed materials, links Markdown idempotently, groups tasks and handl
         .fill("Custom pipeline"),
     ]);
     expect(filtered.ok()).toBeTruthy();
-    await expect(taskGroup).toContainText("Pinned findings");
+    await expect(
+      directory.getByRole("link", { name: "Pinned findings", exact: true }),
+    ).toBeVisible();
     // Visibility alone includes the sheet's translucent opening transition.
     await expect(directory).toHaveCSS("opacity", "1");
     expect((await directory.boundingBox())!.x).toBeCloseTo(0, 0);

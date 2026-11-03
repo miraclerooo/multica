@@ -215,6 +215,8 @@
     "tab": "Spec とドキュメント",
     "issues": "タスク",
     "directory": "プロジェクトのドキュメント",
+    "related_issues": "関連タスク",
+    "no_related_issues": "関連タスクはありません",
     "search": "タイトル、REQ、本文を検索…",
     "new": "新規ドキュメント",
     "specs": "仕様書",

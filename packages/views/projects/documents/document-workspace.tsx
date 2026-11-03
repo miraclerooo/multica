@@ -46,7 +46,9 @@ export function ProjectDocumentWorkspace({ project }: { project: Project }) {
   const [search, setSearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   useEffect(() => { const timer = setTimeout(() => setSearchQuery(search), 250); return () => clearTimeout(timer); }, [search]);
-  const groups = useQuery(documentGroupsOptions(wsId, project.id, { q: searchQuery }));
+  const directoryQuery = useQuery(
+    documentGroupsOptions(wsId, project.id, searchQuery ? { q: searchQuery } : {}),
+  );
   const [newOpen, setNewOpen] = useState(false);
   const [directoryOpen, setDirectoryOpen] = useState(false);
   const directoryTrigger = useRef<HTMLButtonElement>(null);
@@ -109,60 +111,45 @@ export function ProjectDocumentWorkspace({ project }: { project: Project }) {
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-        {groups.isError && <p role="alert" className="pipeline-error">{pt(($) => $.pipeline.failed)}</p>}
-        {groups.data?.groups.map((group) => {
-          const items = group.documents;
-          return (
-            <section key={group.issue_id ?? "project-materials"} className="mb-5" data-issue-id={group.issue_id ?? ""}>
-              <h3 className="px-2 mb-2 flex items-start justify-between gap-2 text-micro font-semibold text-muted-foreground">
-                {group.issue_id ? <AppLink className="min-w-0 break-words hover:text-foreground" href={paths.issueDetail(group.issue_id)}>{group.identifier} · {group.title}</AppLink> : <span>{pt(($) => $.pipeline.project_materials)}</span>}
-                <span>{group.count}</span>
-              </h3>
-              {items.map((doc) => {
-                const draft =
-                  drafts[documentDraftKey(wsId, project.id, doc.id)];
-                return (
-                  <AppLink
-                    key={doc.id}
-                    href={pathFor(doc.id)}
-                    onClick={() => setDirectoryOpen(false)}
-                    aria-current={selected === doc.id ? "page" : undefined}
-                    className={cn(
-                      "document-directory-item",
-                      selected === doc.id && "is-selected",
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2 text-micro font-mono text-muted-foreground">
-                      <span
-                        className={doc.kind === "spec" ? "text-brand" : ""}
-                      >{`${doc.kind === "spec" ? "SPEC" : "DOC"} · v${doc.version}`}</span>
-                      {draft && (
-                        <span
-                          className="size-1.5 rounded-full bg-warning"
-                          aria-label={t(($) => $.documents.dirty)}
-                        />
-                      )}
-                    </div>
-                    <div className="mt-1 line-clamp-2 text-label font-medium break-words">
-                      {draft?.title ?? doc.title}
-                    </div>
-                    <div className="mt-2 truncate text-caption text-muted-foreground">
-                      {doc.author_name} ·{" "}
-                      {doc.author_type === "agent"
-                        ? t(($) => $.documents.agent)
-                        : t(($) => $.documents.member)}
-                    </div>
-                  </AppLink>
-                );
-              })}
-            </section>
-          );
-        })}
-        {search && !groups.isLoading && !groups.data?.documents.length && (
-          <p className="px-2 text-caption text-muted-foreground">
-            {t(($) => $.documents.no_results)}
+        {directoryQuery.isError && (
+          <p role="alert" className="pipeline-error">
+            {pt(($) => $.pipeline.failed)}
           </p>
         )}
+        {directoryQuery.data?.documents.map((doc) => {
+          const draft = drafts[documentDraftKey(wsId, project.id, doc.id)];
+          return (
+            <AppLink
+              key={doc.id}
+              href={pathFor(doc.id)}
+              onClick={() => setDirectoryOpen(false)}
+              aria-current={selected === doc.id ? "page" : undefined}
+              className={cn(
+                "document-directory-item",
+                selected === doc.id && "is-selected",
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 line-clamp-2 text-label font-medium break-words">
+                  {draft?.title ?? doc.title}
+                </span>
+                {draft && (
+                  <span
+                    className="size-1.5 shrink-0 rounded-full bg-warning"
+                    aria-label={t(($) => $.documents.dirty)}
+                  />
+                )}
+              </div>
+            </AppLink>
+          );
+        })}
+        {search &&
+          directoryQuery.isSuccess &&
+          !directoryQuery.data.documents.length && (
+            <p className="px-2 text-caption text-muted-foreground">
+              {t(($) => $.documents.no_results)}
+            </p>
+          )}
       </div>
       <p className="m-3 rounded-lg border bg-background p-3 text-caption leading-relaxed text-muted-foreground">
         {t(($) => $.documents.storage_hint)}
@@ -196,7 +183,10 @@ export function ProjectDocumentWorkspace({ project }: { project: Project }) {
           }
         />
         <div className="flex min-h-0 flex-1">
-          <aside className="document-directory hidden md:block border-r bg-muted/20">
+          <aside
+            className="document-directory hidden md:block border-r bg-muted/20"
+            aria-label={t(($) => $.documents.directory)}
+          >
             {directory}
           </aside>
           <div className="flex min-w-0 flex-1 flex-col">

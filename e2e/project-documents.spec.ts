@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { createTestApi } from "./helpers";
 import { TestApiClient } from "./fixtures";
 
@@ -79,6 +80,128 @@ async function openSource(page: Page) {
   await page.getByRole("button", { name: "Source", exact: true }).click();
   return page.getByRole("textbox", { name: "Markdown source" });
 }
+
+test("lists documents once and shows related issues beside the selected content", async ({
+  page,
+}, info) => {
+  test.setTimeout(180_000);
+  const { api, path, project, create } = await setup(page);
+  try {
+    const shared = await create(
+      "Shared delivery notes",
+      "document",
+      "## Findings\n\nOne document can support several issues.",
+    );
+    await create("Project guide", "spec", specBody);
+    const issues = await Promise.all([
+      api.createIssue("Review delivery findings", { project_id: project.id }),
+      api.createIssue("Plan the next iteration", { project_id: project.id }),
+    ]);
+    for (const issue of issues) {
+      const response = await api.request(`/api/issues/${issue.id}/documents`, {
+        method: "POST",
+        body: JSON.stringify({
+          document_id: shared.id,
+          base_version: shared.version,
+          idempotency_key: randomUUID(),
+        }),
+      });
+      expect(response.ok).toBeTruthy();
+    }
+    await page.goto(`${path}?view=docs&document=${shared.id}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByTestId("project-document-workspace")).toBeVisible({
+      timeout: 30000,
+    });
+    const directory = page.getByRole("complementary", {
+      name: "Project documents",
+      exact: true,
+    });
+    const inspector = page.getByRole("complementary", {
+      name: "Document details",
+      exact: true,
+    });
+    await expect(directory.getByRole("link")).toHaveCount(2);
+    await expect(
+      directory.getByRole("link", { name: shared.title, exact: true }),
+    ).toHaveCount(1);
+    await expect(
+      directory.getByRole("link", { name: "Project guide", exact: true }),
+    ).toBeVisible();
+    for (const issue of issues) {
+      await expect(directory).not.toContainText(issue.title);
+      await expect(
+        inspector.getByRole("link", { name: new RegExp(issue.title) }),
+      ).toHaveAttribute("href", new RegExp(`/issues/${issue.id}$`));
+    }
+    for (const name of ["REQ", "Scenario", "Acceptance item"]) {
+      await expect(page.getByRole("button", { name, exact: true })).toHaveCount(
+        0,
+      );
+    }
+    const inspectorBounds = (await inspector.boundingBox())!;
+    const canvasBounds = (await page
+      .locator(".document-canvas-scroll")
+      .boundingBox())!;
+    expect(inspectorBounds.x).toBeGreaterThanOrEqual(
+      canvasBounds.x + canvasBounds.width,
+    );
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({
+      path: info.outputPath("document-layout-light.png"),
+      style: "nextjs-portal { display: none !important; }",
+    });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect(page.locator("html")).toHaveClass(/dark/);
+    await page.screenshot({
+      path: info.outputPath("document-layout-dark.png"),
+      style: "nextjs-portal { display: none !important; }",
+    });
+    await page.emulateMedia({ colorScheme: "light" });
+
+    const search = directory.getByLabel("Search tasks and Markdown documents");
+    await search.fill(issues[0]!.title);
+    await expect(directory.getByRole("link")).toHaveCount(1);
+    await expect(
+      directory.getByRole("link", { name: shared.title, exact: true }),
+    ).toBeVisible();
+    await expect(inspector).toContainText(issues[1]!.title);
+    await search.fill("");
+    await directory
+      .getByRole("link", { name: "Project guide", exact: true })
+      .click();
+    await expect(inspector).toContainText("No related issues");
+    await expect(inspector).not.toContainText(issues[0]!.title);
+    await directory
+      .getByRole("link", { name: shared.title, exact: true })
+      .click();
+    await expect(inspector).toContainText(issues[0]!.title);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page
+      .getByRole("button", { name: "Document details", exact: true })
+      .click();
+    const details = page.getByRole("dialog", {
+      name: "Document details",
+      exact: true,
+    });
+    await expect(details).toContainText("Related issues");
+    await expect(details).toContainText(issues[0]!.title);
+    await expect(details).toContainText(issues[1]!.title);
+    await expect(details).toHaveCSS("opacity", "1");
+    await page.screenshot({
+      path: info.outputPath("document-layout-mobile.png"),
+      style: "nextjs-portal { display: none !important; }",
+    });
+    await page.keyboard.press("Escape");
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(390);
+  } finally {
+    await api.cleanup();
+  }
+});
 
 test("creates both document kinds, edits all modes and saves Markdown checkboxes", async ({
   page,

@@ -215,6 +215,8 @@
     "tab": "Specs & Docs 文档",
     "issues": "任务",
     "directory": "项目文档目录",
+    "related_issues": "关联任务",
+    "no_related_issues": "暂无关联任务",
     "search": "搜索标题、REQ 编号或正文…",
     "new": "新建文档",
     "specs": "核心 Spec 规范",

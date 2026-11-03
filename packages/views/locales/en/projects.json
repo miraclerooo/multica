@@ -217,6 +217,8 @@
     "tab": "Specs & Docs",
     "issues": "Issues",
     "directory": "Project documents",
+    "related_issues": "Related issues",
+    "no_related_issues": "No related issues",
     "search": "Search title, REQ or content…",
     "new": "New document",
     "specs": "Living Specs",

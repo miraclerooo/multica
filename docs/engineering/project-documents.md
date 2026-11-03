@@ -2,7 +2,7 @@
 
 ## Scope
 
-Projects expose a shared web/desktop three-column document workspace: grouped, searchable directory; Markdown reading/direct editing, split preview and source; resource information, recent editors and revision history. A lightweight Spec template contains context/goals, numbered REQ headings, WHEN/THEN scenarios and Markdown task lists. OpenSpec is a content reference only; there is no new dependency, approval, archive or Git synchronization workflow.
+Projects expose a shared web/desktop three-column document workspace: a searchable directory of document titles; Markdown reading/direct editing, split preview and source; related issues, resource information, recent editors and revision history. The directory lists each document once, and related issues are shown for the selected document in the right inspector (or details sheet on narrow screens). A lightweight Spec template contains context/goals, numbered REQ headings, WHEN/THEN scenarios and Markdown task lists. OpenSpec is a content reference only; there is no new dependency, approval, archive or Git synchronization workflow.
 
 ## Storage and API contract
 
