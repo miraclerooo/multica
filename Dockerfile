@@ -16,8 +16,10 @@ COPY server/ ./server/
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
+ARG CLI_RELEASE_REPOSITORY=multica-ai/multica
+ARG CLI_RELEASE_CHANNEL=unknown
 RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" -o bin/server ./cmd/server
-RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" -o bin/multica ./cmd/multica
+RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildCommit=${COMMIT} -X main.date=${DATE} -X main.releaseChannel=${CLI_RELEASE_CHANNEL} -X github.com/multica-ai/multica/server/internal/cli.releaseRepository=${CLI_RELEASE_REPOSITORY}" -o bin/multica ./cmd/multica
 RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/migrate ./cmd/migrate
 RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/maintenance ./cmd/maintenance
 RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/backfill_task_usage_hourly ./cmd/backfill_task_usage_hourly

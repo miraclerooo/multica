@@ -1,0 +1,64 @@
+name: ipoke CLI Release
+
+on:
+  push:
+    tags: ["v*-ipoke.*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ipoke-cli-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: multica
+          POSTGRES_USER: multica
+          POSTGRES_PASSWORD: multica
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U multica" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://multica:multica@localhost:5432/multica?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "~1.27.3"
+          check-latest: true
+          cache-dependency-path: server/go.sum
+      - name: Migrate test database
+        working-directory: server
+        run: go run ./cmd/migrate up
+      - name: Run guarded Go tests
+        run: bash scripts/test-go.sh --race
+      - name: Scan Go vulnerabilities
+        working-directory: server
+        run: go tool govulncheck ./...
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "~1.27.3"
+          check-latest: true
+          cache-dependency-path: server/go.sum
+      - name: Build six CLI archives and checksums
+        env:
+          MULTICA_RELEASE_REPOSITORY: ${{ github.repository }}
+        run: bash scripts/build-cli-release.sh "$GITHUB_REF_NAME" dist-cli
+      - name: Publish repository release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist-cli/*.tar.gz dist-cli/*.zip dist-cli/checksums.txt \
+            --verify-tag --latest --prerelease=false --title "ipoke CLI ${GITHUB_REF_NAME#v}" \
+            --notes "CLI for ipoke.si. Source commit: $GITHUB_SHA. Includes project document CRUD and repository-bound updates."

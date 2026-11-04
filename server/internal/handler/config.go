@@ -42,7 +42,8 @@ type AppConfig struct {
 	DaemonAppURL    string `json:"daemon_app_url,omitempty"`
 	// Explicit even when URLs are omitted, so clients never infer Cloud from
 	// missing self-host configuration. Older clients ignore this additive field.
-	DaemonSetupTarget string `json:"daemon_setup_target"`
+	DaemonSetupTarget    string `json:"daemon_setup_target"`
+	CLIReleaseRepository string `json:"cli_release_repository,omitempty"`
 
 	// VCSIntegrationAvailable mirrors the MULTICA_VCS_INTEGRATION_ENABLED
 	// deployment switch so the Settings UI can hide the whole self-hosted Git
@@ -133,6 +134,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	config.CdnSigned = h.CFSigner != nil
 	config.DaemonServerURL, config.DaemonAppURL = daemonSetupURLsFromEnv()
 	config.DaemonSetupTarget = "self_host"
+	config.CLIReleaseRepository = os.Getenv("MULTICA_CLI_RELEASE_REPOSITORY")
 	config.VCSIntegrationAvailable = h.cfg.VCSIntegrationEnabled
 	config.FeatureFlags = featureflags.EvaluateFrontendPublicFlags(r.Context(), h.FeatureFlags)
 	// Only surface the build version on self-hosted deployments. The managed

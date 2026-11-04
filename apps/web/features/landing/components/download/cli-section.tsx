@@ -24,16 +24,17 @@ const PLATFORM_TABS = {
  * lightweight Desktop. Two copy-and-paste command blocks; the install one
  * carries the platform switch, since install.sh and install.ps1 differ.
  */
-export function CliSection() {
+export function CliSection({ repository, setupCmd = SETUP_CMD, heading }: { repository?: string; setupCmd?: string | null; heading?: string }) {
   const { t } = useLocale();
   const d = t.download.cli;
+  const Heading = heading ? "h1" : "h2";
 
   return (
     <section id="cli" className="bg-[#f7f7f5] py-20 text-[#0a0d12] sm:py-24">
       <div className="mx-auto max-w-[820px] px-4 sm:px-6 lg:px-8">
-        <h2 className="landing-serif text-[2.2rem] leading-[1.1] tracking-[-0.03em] sm:text-[2.6rem]">
-          {d.title}
-        </h2>
+        <Heading className="landing-serif text-[2.2rem] leading-[1.1] tracking-[-0.03em] sm:text-[2.6rem]">
+          {heading ?? d.title}
+        </Heading>
         <p className="mt-4 max-w-[620px] text-body-lg leading-7 text-[#0a0d12]/72">
           {d.sub}
         </p>
@@ -42,6 +43,7 @@ export function CliSection() {
           <div>
             <CommandLabel>{d.installLabel}</CommandLabel>
             <CliInstallCommand
+              repository={repository}
               labels={{
                 group: d.platformGroup,
                 macosLinux: d.platformMacosLinux,
@@ -58,14 +60,14 @@ export function CliSection() {
               )}
             </CliInstallCommand>
           </div>
-          <div>
+          {setupCmd && <div>
             <CommandLabel>{d.startLabel}</CommandLabel>
             <CommandRow
-              cmd={SETUP_CMD}
+              cmd={setupCmd}
               copyLabel={d.copyLabel}
               copiedLabel={d.copiedLabel}
             />
-          </div>
+          </div>}
         </div>
 
         <p className="mt-6 text-label text-[#0a0d12]/60">{d.sshNote}</p>

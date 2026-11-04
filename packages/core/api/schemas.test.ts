@@ -1257,6 +1257,15 @@ describe("dashboard + runtime usage schema drift", () => {
 // An older server deletes a comment's replies with it and omits this field,
 // so absent or malformed must parse as false: the client then promises nothing
 // about replies and keeps the legacy delete route (#8296).
+describe("AppConfigSchema CLI distribution", () => {
+  it("keeps valid repository configuration and handles malformed values", () => {
+    expect(AppConfigSchema.parse({ cli_release_repository: "miraclerooo/multica" }).cli_release_repository).toBe("miraclerooo/multica");
+    for (const value of [null, 42, "owner/repo;echo unsafe"]) {
+      expect(AppConfigSchema.parse({ cli_release_repository: value }).cli_release_repository).toBe("");
+    }
+  });
+});
+
 describe("AppConfigSchema comment_delete_keep_replies_supported drift", () => {
   it.each([
     [undefined, false],

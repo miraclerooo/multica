@@ -1,6 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useConfigStore } from "@multica/core/config";
+import { cliInstallCommands } from "@multica/core/runtimes/cli-install";
 import {
   Tabs,
   TabsContent,
@@ -17,12 +19,7 @@ import {
  * silently went missing from all of them while scripts/install.ps1 sat in the
  * repo. The scripts' own headers are the source of truth.
  */
-export const CLI_INSTALL_COMMANDS = {
-  macosLinux:
-    "curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash",
-  windows:
-    "irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex",
-} as const;
+export const CLI_INSTALL_COMMANDS = cliInstallCommands();
 
 export type CliInstallPlatform = keyof typeof CLI_INSTALL_COMMANDS;
 
@@ -52,12 +49,16 @@ export function CliInstallCommand({
   labels,
   classNames,
   children,
+  repository,
 }: {
   labels: CliInstallCommandLabels;
   /** Palette overrides for surfaces that do not use the product tokens. */
   classNames?: { list?: string; trigger?: string };
   children: (command: string) => ReactNode;
+  repository?: string;
 }) {
+  const configuredRepository = useConfigStore((s) => s.cliReleaseRepository);
+  const commands = cliInstallCommands(repository ?? configuredRepository);
   return (
     <Tabs defaultValue={PLATFORMS[0]}>
       <TabsList
@@ -77,7 +78,7 @@ export function CliInstallCommand({
       </TabsList>
       {PLATFORMS.map((platform) => (
         <TabsContent key={platform} value={platform}>
-          {children(CLI_INSTALL_COMMANDS[platform])}
+          {children(commands[platform])}
         </TabsContent>
       ))}
     </Tabs>
