@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/multica-ai/multica/server/internal/cli"
@@ -142,5 +143,190 @@ func TestProjectDocumentCLICreateAndDiscover(t *testing.T) {
 		if err := cmd.Execute(); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestProjectDocumentCLIBodyInputsAndPartialUpdates(t *testing.T) {
+	body := "## 中文\n\n保留字面量 \\n 和 C:\\project\\docs\n"
+	for _, tc := range []struct {
+		name, op, title, wantBody string
+		flags                     []string
+		readBase                  bool
+	}{
+		{"inline create", "create", "New", body, []string{"--title", "New", "--body", body}, false},
+		{"stdin create", "create", "New", body, []string{"--title", "New", "--body-file", "-"}, false},
+		{"empty create", "create", "New", "", []string{"--title", "New", "--kind", "spec", "--body", ""}, false},
+		{"body update", "update", "Original", body, []string{"--base-version", "7", "--body", body}, true},
+		{"stdin update", "update", "Original", body, []string{"--base-version", "7", "--body-file", "-"}, true},
+		{"rename", "update", "Renamed", "Original body", []string{"--base-version", "7", "--title", "Renamed"}, true},
+		{"clear body", "update", "Original", "", []string{"--base-version", "7", "--body", ""}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writes, baseReads := 0, 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				base := "/api/projects/" + documentCLIProject
+				switch {
+				case r.Method == "GET" && r.URL.Path == base:
+					_ = json.NewEncoder(w).Encode(map[string]any{"id": documentCLIProject, "title": "Test"})
+				case r.Method == "GET" && r.URL.Path == base+"/documents/"+documentCLIId+"/revisions/7":
+					baseReads++
+					_ = json.NewEncoder(w).Encode(map[string]any{"title": "Original", "body": "Original body", "version": 7})
+				case (r.Method == "POST" && r.URL.Path == base+"/documents") || (r.Method == "PUT" && r.URL.Path == base+"/documents/"+documentCLIId):
+					writes++
+					var input map[string]any
+					if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+						t.Error(err)
+					}
+					if input["title"] != tc.title || input["body"] != tc.wantBody {
+						t.Errorf("unexpected document: %+v", input)
+					}
+					if tc.op == "update" && input["base_version"] != float64(7) {
+						t.Errorf("lost explicit version: %+v", input)
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{"id": documentCLIId, "body": input["body"], "title": input["title"], "version": 8})
+				default:
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(404)
+				}
+			}))
+			defer server.Close()
+			setCLITestServerEnv(t, server.URL)
+			t.Setenv("MULTICA_TOKEN", "mat_test-document-token")
+			cmd := newProjectDocumentCommand()
+			cmd.PersistentFlags().String("profile", "", "")
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetIn(strings.NewReader(body))
+			args := []string{tc.op, documentCLIProject}
+			if tc.op == "update" {
+				args = append(args, documentCLIId)
+			}
+			cmd.SetArgs(append(args, tc.flags...))
+			if err := cmd.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			if writes != 1 || (baseReads == 1) != tc.readBase {
+				t.Fatalf("writes=%d, base reads=%d", writes, baseReads)
+			}
+		})
+	}
+}
+
+func TestProjectDocumentCLIDelete(t *testing.T) {
+	for _, status := range []int{204, 404, 409} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			writes := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				base := "/api/projects/" + documentCLIProject
+				if r.Method == "GET" && r.URL.Path == base {
+					_ = json.NewEncoder(w).Encode(map[string]any{"id": documentCLIProject, "title": "Test"})
+					return
+				}
+				if r.Method != "DELETE" || r.URL.Path != base+"/documents/"+documentCLIId {
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(404)
+					return
+				}
+				writes++
+				var input struct {
+					BaseVersion int `json:"base_version"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.BaseVersion != 7 {
+					t.Errorf("delete version = %+v, %v", input, err)
+				}
+				w.WriteHeader(status)
+				if status != 204 {
+					_, _ = w.Write([]byte(`{"code":"document_version_conflict","error":"changed","latest":{"version":8}}`))
+				}
+			}))
+			defer server.Close()
+			setCLITestServerEnv(t, server.URL)
+			t.Setenv("MULTICA_TOKEN", "mat_test-document-token")
+			cmd := newProjectDocumentCommand()
+			cmd.PersistentFlags().String("profile", "", "")
+			out := &bytes.Buffer{}
+			cmd.SilenceUsage = true
+			cmd.SetOut(out)
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetArgs([]string{"delete", documentCLIProject, "multica://project/" + documentCLIProject + "/documents/" + documentCLIId, "--base-version", "7"})
+			err := cmd.Execute()
+			if writes != 1 {
+				t.Fatalf("delete requests = %d; do not retry a rejected deletion", writes)
+			}
+			if status != 204 {
+				var httpErr *cli.HTTPError
+				if !errors.As(err, &httpErr) || httpErr.StatusCode != status || out.Len() != 0 {
+					t.Fatalf("failed delete = %v, stdout=%q", err, out.String())
+				}
+				return
+			}
+			var result map[string]any
+			if err != nil || json.Unmarshal(out.Bytes(), &result) != nil || result["id"] != documentCLIId || result["deleted"] != true {
+				t.Fatalf("delete = %v, stdout=%q", err, out.String())
+			}
+		})
+	}
+}
+
+func TestProjectDocumentCLIRejectsInvalidWrites(t *testing.T) {
+	writes := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			writes++
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": documentCLIProject, "title": "Test"})
+	}))
+	defer server.Close()
+	setCLITestServerEnv(t, server.URL)
+	t.Setenv("MULTICA_TOKEN", "mat_test-document-token")
+	for _, args := range [][]string{
+		{"create", documentCLIProject, "--title", "New", "--body", "one", "--body-file", "-"},
+		{"update", documentCLIProject, documentCLIId, "--base-version", "1"},
+		{"update", documentCLIProject, documentCLIId, "--base-version", "0", "--body", "new"},
+		{"update", documentCLIProject, documentCLIId, "--base-version", "1", "--title", ""},
+		{"delete", documentCLIProject, documentCLIId},
+		{"delete", documentCLIProject, documentCLIId, "--base-version", "0"},
+		{"delete", documentCLIProject, "multica://project/33333333-3333-4333-8333-333333333333/documents/" + documentCLIId, "--base-version", "1"},
+	} {
+		cmd := newProjectDocumentCommand()
+		cmd.PersistentFlags().String("profile", "", "")
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err == nil {
+			t.Fatalf("accepted invalid args %v", args)
+		}
+	}
+	if writes != 0 {
+		t.Fatalf("invalid input made %d writes", writes)
+	}
+}
+
+func TestProjectDocumentCLIPartialUpdateRejectsMalformedBase(t *testing.T) {
+	for _, base := range []string{
+		`{"title":"Original","version":7}`,
+		`{"body":"Original body","version":7}`,
+		`{"title":"Original","body":null,"version":7}`,
+		`{"title":"Original","body":"Original body","version":8}`,
+	} {
+		t.Run(base, func(t *testing.T) {
+			writes := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "GET" {
+					writes++
+				}
+				_, _ = w.Write([]byte(base))
+			}))
+			defer server.Close()
+			setCLITestServerEnv(t, server.URL)
+			t.Setenv("MULTICA_TOKEN", "mat_test-document-token")
+			cmd := newProjectDocumentCommand()
+			cmd.PersistentFlags().String("profile", "", "")
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetArgs([]string{"update", documentCLIProject, documentCLIId, "--base-version", "7", "--title", "Renamed"})
+			if err := cmd.Execute(); err == nil || writes != 0 {
+				t.Fatalf("malformed snapshot was accepted: error=%v, writes=%d", err, writes)
+			}
+		})
 	}
 }

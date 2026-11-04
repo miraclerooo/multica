@@ -57,11 +57,18 @@ Project runs discover documents as resources and read the latest saved revision 
 multica project document list <project-id> --output json
 multica project document get <project-id> <document-id-or-uri> --output markdown
 multica project document create <project-id> --kind spec --title "Feature Spec"
-multica project document update <project-id> <document-id> --base-version 2 --title "Feature Spec" --body-file ./spec.md
+multica project document create <project-id> --title "Notes" --body "Initial notes"
+multica project document update <project-id> <document-id> --base-version 2 --body-file ./spec.md
+multica project document update <project-id> <document-id> --base-version 3 --title "Renamed Spec"
 multica project document history <project-id> <document-id>
+multica project document delete <project-id> <document-id> --base-version 4
 ```
 
-Use the version you actually read as `--base-version`. A 409 preserves the saved document; read and compare the newer version before retrying. The reference format is `multica://project/<project-id>/documents/<document-id>`; `project document get` resolves it. The resource API also resolves `GET /api/projects/{id}/resources/{resourceId}/content` to the current saved snapshot. Unsaved browser drafts are never exposed to runs.
+Projects accept a full UUID or unique ID prefix. Use `--body` for inline Markdown or `--body-file -` to read standard input, preserving newlines and literal backslashes. These options are mutually exclusive. On update, omit `--title` or the body option to preserve that field from the specified base revision; use `--body ""` to clear the body explicitly.
+
+Use the version you actually read as `--base-version` for updates and deletions. A 409 preserves the saved document; read and compare the newer version before retrying. Deletion removes the document from project and issue document lists and active resources. Immutable history, pinned pipeline materials and source records remain readable with `history`, `sources`, or `get --version`; deletion does not approve or cancel a pipeline.
+
+The reference format is `multica://project/<project-id>/documents/<document-id>`; `project document get` resolves it. The resource API also resolves `GET /api/projects/{id}/resources/{resourceId}/content` to the current saved snapshot. Unsaved browser drafts are never exposed to runs.
 
 ## Add resources
 

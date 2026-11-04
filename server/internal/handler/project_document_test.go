@@ -185,6 +185,74 @@ func TestProjectDocumentConcurrentHTTPWrites(t *testing.T) {
 	}
 }
 
+func TestProjectDocumentDeletePreservesHistoryAndRemovesActiveMaterials(t *testing.T) {
+	projectID := documentTestProject(t)
+	doc := createTestDocument(t, projectID, "Deletion lifecycle", "spec")
+	testutil.Call(t, testHandler.SaveProjectDocument, documentTestRequest("PUT", projectID, doc.ID, map[string]any{"base_version": 1, "title": "Latest", "body": "Latest content"})).Want(200)
+	issue := dbfx.Issue(t, "Document deletion", testutil.Cols{"project_id": projectID})
+	testutil.Call(t, testHandler.AssociateIssueDocument, issueDocumentRequest("POST", issue, "", issueDocumentInput(doc.ID, 2, "link-before-delete", nil))).Want(200)
+
+	var conflict struct {
+		Code   string                  `json:"code"`
+		Latest ProjectDocumentResponse `json:"latest"`
+	}
+	testutil.Call(t, testHandler.DeleteProjectDocument, documentTestRequest("DELETE", projectID, doc.ID, map[string]any{"base_version": 1})).Want(409).JSON(&conflict)
+	if conflict.Code != "document_version_conflict" || conflict.Latest.Version != 2 || conflict.Latest.Body != "Latest content" {
+		t.Fatalf("stale delete lost current document: %+v", conflict)
+	}
+	testutil.Call(t, testHandler.GetProjectDocument, documentTestRequest("GET", projectID, doc.ID, nil)).Want(200)
+	testutil.Call(t, testHandler.DeleteProjectDocument, documentTestRequest("DELETE", projectID, doc.ID, map[string]any{"base_version": 2})).Want(204)
+	testutil.Call(t, testHandler.GetProjectDocument, documentTestRequest("GET", projectID, doc.ID, nil)).Want(404)
+	testutil.Call(t, testHandler.SaveProjectDocument, documentTestRequest("PUT", projectID, doc.ID, map[string]any{"base_version": 2, "title": "Revive", "body": "No"})).Want(404)
+	testutil.Call(t, testHandler.DeleteProjectDocument, documentTestRequest("DELETE", projectID, doc.ID, map[string]any{"base_version": 2})).Want(404)
+	testutil.Call(t, testHandler.AssociateIssueDocument, issueDocumentRequest("POST", issue, "", issueDocumentInput(doc.ID, 2, "link-after-delete", nil))).Want(404)
+	for _, read := range []struct {
+		handler http.HandlerFunc
+		request *http.Request
+	}{
+		{testHandler.ListProjectDocuments, documentTestRequest("GET", projectID, "", nil)},
+		{testHandler.ListIssueDocuments, issueDocumentRequest("GET", issue, "", nil)},
+	} {
+		var list struct {
+			Total int `json:"total"`
+		}
+		testutil.Call(t, read.handler, read.request).Want(200).JSON(&list)
+		if list.Total != 0 {
+			t.Fatal("deleted document remains in active materials")
+		}
+	}
+	if count := dbfx.Count(t, "SELECT count(*) FROM project_resource WHERE project_id=$1", projectID); count != 0 {
+		t.Fatalf("deleted document has %d active resources", count)
+	}
+	var history struct {
+		Revisions []ProjectDocumentResponse `json:"revisions"`
+	}
+	testutil.Call(t, testHandler.ListProjectDocumentRevisions, documentTestRequest("GET", projectID, doc.ID, nil)).Want(200).JSON(&history)
+	if len(history.Revisions) != 2 || history.Revisions[1].Body != doc.Body {
+		t.Fatalf("deletion changed immutable history: %+v", history)
+	}
+	req := testutil.WithURLParams(documentTestRequest("GET", projectID, doc.ID, nil), "id", projectID, "documentId", doc.ID, "version", "1")
+	var pinned ProjectDocumentResponse
+	testutil.Call(t, testHandler.GetProjectDocumentRevision, req).Want(200).JSON(&pinned)
+	if pinned.Body != doc.Body || pinned.Version != 1 {
+		t.Fatalf("deleted document's pinned revision changed: %+v", pinned)
+	}
+}
+
+func TestProjectDocumentDeleteScopeAndValidation(t *testing.T) {
+	projectID := documentTestProject(t)
+	other := documentTestProject(t)
+	doc := createTestDocument(t, projectID, "Scoped delete", "document")
+	testutil.Call(t, testHandler.DeleteProjectDocument, documentTestRequest("DELETE", other, doc.ID, map[string]any{"base_version": 1})).Want(404)
+	_, foreign := foreignWorkspaceWithProject(t, "deleted-document-foreign", "DDF")
+	testutil.Call(t, testHandler.DeleteProjectDocument, documentTestRequest("DELETE", foreign, doc.ID, map[string]any{"base_version": 1})).Want(404)
+	testutil.Call(t, testHandler.DeleteProjectDocument, documentTestRequest("DELETE", projectID, "invalid", map[string]any{"base_version": 1})).Want(400)
+	for _, input := range []any{nil, map[string]any{}, map[string]any{"base_version": 0}, map[string]any{"base_version": -1}, map[string]any{"base_version": "1"}, map[string]any{"base_version": 1, "unknown": true}} {
+		testutil.Call(t, testHandler.DeleteProjectDocument, documentTestRequest("DELETE", projectID, doc.ID, input)).Want(400)
+	}
+	testutil.Call(t, testHandler.GetProjectDocument, documentTestRequest("GET", projectID, doc.ID, nil)).Want(200)
+}
+
 func TestProjectDocumentScopeValidationAndAgent(t *testing.T) {
 	projectID := documentTestProject(t)
 	other := documentTestProject(t)

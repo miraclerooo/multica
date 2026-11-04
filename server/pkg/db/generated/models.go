@@ -1429,6 +1429,7 @@ type ProjectDocument struct {
 	AuthorName  string             `json:"author_name"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type ProjectDocumentIssue struct {

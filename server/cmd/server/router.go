@@ -2186,6 +2186,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/documents", h.CreateProjectDocument)
 					r.Get("/documents/{documentId}", h.GetProjectDocument)
 					r.Put("/documents/{documentId}", h.SaveProjectDocument)
+					r.Delete("/documents/{documentId}", h.DeleteProjectDocument)
 					r.Get("/documents/{documentId}/revisions", h.ListProjectDocumentRevisions)
 					r.Get("/documents/{documentId}/sources", h.ListDocumentSources)
 					r.Get("/documents/{documentId}/revisions/{version}", h.GetProjectDocumentRevision)

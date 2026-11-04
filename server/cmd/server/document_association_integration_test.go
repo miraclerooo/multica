@@ -89,4 +89,12 @@ func TestDocumentAssociationAuthenticatedHTTP(t *testing.T) {
 		t.Fatalf("unlink left relation: %s", data)
 	}
 	call("GET", docPath+"/revisions/1", testToken, nil, 200)
+	call("DELETE", docPath, "", map[string]any{"base_version": 2}, 401)
+	call("DELETE", docPath, testToken, map[string]any{"base_version": 1}, 409)
+	call("DELETE", docPath, testToken, map[string]any{"base_version": 2}, 204)
+	call("GET", docPath, testToken, nil, 404)
+	pinned = call("GET", docPath+"/revisions/1/content", testToken, nil, 200)
+	if string(pinned) != originalBody {
+		t.Fatalf("deleted document lost pinned content: %s", pinned)
+	}
 }

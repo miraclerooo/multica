@@ -3,7 +3,7 @@ import * as pipelines from "../pipelines/schema";
 import { z, type ZodType } from "zod";
 import { IssueExecutionSchema, type IssueExecution, type ExecutionSelection } from "../pipelines/execution";
 import { DirectoryBrowseRequestSchema, MALFORMED_DIRECTORY_REQUEST, type DirectoryBrowseInput, type DirectoryBrowseRequest } from "../runtimes/directories-schema";
-import { DocumentListSchema, DocumentHistorySchema, ProjectResourceListSchema, parseDocumentResponse, type ProjectDocument, type CreateDocumentInput, type SaveDocumentInput } from "../documents/schema";
+import { DocumentListSchema, DocumentHistorySchema, ProjectResourceListSchema, parseDocumentResponse, type ProjectDocument, type CreateDocumentInput, type SaveDocumentInput, type DeleteDocumentInput } from "../documents/schema";
 import { AgentRuntimeSchema, EMPTY_RUNTIME } from "../runtimes/schema";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -4209,6 +4209,10 @@ export class ApiClient {
 
   async saveProjectDocument(projectId: string, id: string, data: SaveDocumentInput) {
     return parseDocumentResponse(await this.fetch<unknown>(`/api/projects/${projectId}/documents/${id}`, { method: "PUT", body: JSON.stringify(data) }), "PUT project document");
+  }
+
+  async deleteProjectDocument(projectId: string, id: string, data: DeleteDocumentInput) {
+    await this.fetch<void>(`/api/projects/${projectId}/documents/${id}`, { method: "DELETE", body: JSON.stringify(data) });
   }
 
   async listProjectDocumentRevisions(projectId: string, id: string) {
