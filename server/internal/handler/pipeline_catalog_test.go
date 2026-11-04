@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/multica-ai/multica/server/internal/pipeline"
 	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/testutil"
@@ -200,6 +201,20 @@ func TestIssueExecutionWaitingRuntimeFrozenResumeAndConcurrentReplay(t *testing.
 	if view.Execution.State != "ready" || view.Execution.DefinitionID != a.Definition.ID {
 		t.Fatal("recheck changed frozen version")
 	}
+	// Permission checks must use the transaction's connection even when all
+	// other connections are occupied by concurrent starts waiting on the issue.
+	config := testPool.Config()
+	config.MaxConns = 1
+	pool, err := pgxpool.NewWithConfig(t.Context(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	f.h.Queries = db.New(pool)
+	f.h.DB = pool
+	f.h.TxStarter = pool
+	f.h.TaskService = service.NewTaskService(f.h.Queries, pool, f.h.Hub, f.h.Bus, nil)
+	f.h.initPipelines(nil)
 	const count = 6
 	results := make(chan *httptest.ResponseRecorder, count)
 	var wg sync.WaitGroup
@@ -208,7 +223,10 @@ func TestIssueExecutionWaitingRuntimeFrozenResumeAndConcurrentReplay(t *testing.
 		go func() {
 			defer wg.Done()
 			rr := httptest.NewRecorder()
-			f.h.StartIssueExecution(rr, executionRequest("POST", issue.ID))
+			req := executionRequest("POST", issue.ID)
+			ctx, cancel := context.WithTimeout(req.Context(), 10*time.Second)
+			defer cancel()
+			f.h.StartIssueExecution(rr, req.WithContext(ctx))
 			results <- rr
 		}()
 	}
@@ -310,7 +328,7 @@ func TestIssueExecutionConcurrentCreateAndInvalidSelectionZeroDispatch(t *testin
 		t.Fatal("invalid selection created an issue")
 	}
 	canInvoke := f.h.Pipelines.CanInvoke
-	f.h.Pipelines.CanInvoke = func(context.Context, db.Agent, string, string) bool { return false }
+	f.h.Pipelines.CanInvoke = func(context.Context, *db.Queries, db.Agent, string, string) bool { return false }
 	testutil.Call(t, f.h.CreateIssue, newRequest("POST", "/api/issues", map[string]any{"title": "forbidden selection", "assignee_type": "squad", "assignee_id": f.squad, "execution": map[string]any{"mode": "pipeline", "pipeline_id": a.Pipeline.ID}})).Want(403)
 	f.h.Pipelines.CanInvoke = canInvoke
 	if after := dbfx.Count(t, "SELECT count(*) FROM issue WHERE workspace_id=$1", testWorkspaceID); after != before {

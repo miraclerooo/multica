@@ -66,7 +66,7 @@ func (h *Handler) PipelineCandidates(w http.ResponseWriter, r *http.Request) {
 		reason := ""
 		if a.ArchivedAt.Valid {
 			reason = "agent_archived"
-		} else if h.Pipelines.CanInvoke == nil || !h.Pipelines.CanInvoke(r.Context(), a, uuidToString(member.UserID), ws) {
+		} else if h.Pipelines.CanInvoke == nil || !h.Pipelines.CanInvoke(r.Context(), h.Queries, a, uuidToString(member.UserID), ws) {
 			reason = "invocation_forbidden"
 		}
 		if search == "" || strings.Contains(strings.ToLower(a.Name), search) {

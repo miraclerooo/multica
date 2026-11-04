@@ -22,8 +22,8 @@ type PipelineService struct {
 	Queries           *db.Queries
 	TxStarter         TxStarter
 	Tasks             *TaskService
-	CanInvoke         func(context.Context, db.Agent, string, string) bool
-	CanInvokeMarkdown func(context.Context, db.Agent, string, string, string, string) bool
+	CanInvoke         func(context.Context, *db.Queries, db.Agent, string, string) bool
+	CanInvokeMarkdown func(context.Context, *db.Queries, db.Agent, string, string, string, string) bool
 	ArtifactAvailable func(context.Context, db.Attachment) bool
 	RepositoryFile    func(context.Context, string, string, string, string, string) (string, []byte, error)
 }
@@ -116,7 +116,7 @@ func (s *PipelineService) Bindings(ctx context.Context, q *db.Queries, squad db.
 			add("role_unbound", "role", "executor is unavailable")
 			continue
 		}
-		if s.CanInvoke == nil || !s.CanInvoke(ctx, agent, user, util.UUIDToString(squad.WorkspaceID)) {
+		if s.CanInvoke == nil || !s.CanInvoke(ctx, q, agent, user, util.UUIDToString(squad.WorkspaceID)) {
 			add("invocation_forbidden", "role", "triggering member cannot invoke this executor")
 			continue
 		}

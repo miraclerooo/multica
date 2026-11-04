@@ -551,11 +551,11 @@ func (h *Handler) ListPipelineArtifacts(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) initPipelines(github *ghsnapshot.Client) {
-	h.Pipelines = &service.PipelineService{Queries: h.Queries, TxStarter: h.TxStarter, Tasks: h.TaskService, CanInvoke: func(ctx context.Context, a db.Agent, user, ws string) bool {
-		if _, err := h.getWorkspaceMember(ctx, user, ws); err != nil {
+	h.Pipelines = &service.PipelineService{Queries: h.Queries, TxStarter: h.TxStarter, Tasks: h.TaskService, CanInvoke: func(ctx context.Context, q *db.Queries, a db.Agent, user, ws string) bool {
+		if _, err := getWorkspaceMemberWithQueries(ctx, q, user, ws); err != nil {
 			return false
 		}
-		return h.canInvokeAgent(ctx, a, "member", user, user, ws)
+		return h.canInvokeAgentWithQueries(ctx, q, a, "member", user, user, ws)
 	}, ArtifactAvailable: func(ctx context.Context, a db.Attachment) bool {
 		if h.Storage == nil {
 			return false
@@ -567,7 +567,7 @@ func (h *Handler) initPipelines(github *ghsnapshot.Client) {
 		_ = reader.Close()
 		return true
 	}}
-	h.Pipelines.CanInvokeMarkdown = h.canInvokeAgent
+	h.Pipelines.CanInvokeMarkdown = h.canInvokeAgentWithQueries
 	h.Pipelines.RepositoryFile = func(ctx context.Context, ws, user, repo, path, ref string) (string, []byte, error) {
 		if _, err := h.getWorkspaceMember(ctx, user, ws); err != nil {
 			return "", nil, err

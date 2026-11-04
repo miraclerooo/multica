@@ -115,13 +115,13 @@ func (s *PipelineService) ResolveIssueExecution(ctx context.Context, q *db.Queri
 		if e != nil || leader.ArchivedAt.Valid || leader.WorkspaceID != squad.WorkspaceID {
 			return nil, pipeline.Fail("role_unbound", "squad leader is unavailable")
 		}
-		allowed := s.CanInvoke != nil && s.CanInvoke(ctx, leader, user, ws)
+		allowed := s.CanInvoke != nil && s.CanInvoke(ctx, q, leader, user, ws)
 		if s.CanInvokeMarkdown != nil && len(principal) > 0 {
 			p := principal[0]
-			allowed = s.CanInvokeMarkdown(ctx, leader, p.ActorType, p.ActorID, user, ws)
+			allowed = s.CanInvokeMarkdown(ctx, q, leader, p.ActorType, p.ActorID, user, ws)
 		}
 		if !allowed {
-			return nil, pipeline.Fail("invocation_forbidden", "triggering member cannot invoke the squad leader")
+			return nil, pipeline.Fail("invocation_forbidden", "you do not have permission to assign work to this squad")
 		}
 		return out, nil
 	}
@@ -186,7 +186,7 @@ func (s *PipelineService) CheckFrozenExecution(ctx context.Context, q *db.Querie
 		if err != nil || a.ArchivedAt.Valid || a.WorkspaceID != issue.WorkspaceID {
 			return ExecutionReadiness{}, pipeline.Fail("role_unbound", "frozen executor is unavailable")
 		}
-		if s.CanInvoke == nil || !s.CanInvoke(ctx, a, e.CreatorID, util.UUIDToString(issue.WorkspaceID)) || !s.CanInvoke(ctx, a, user, util.UUIDToString(issue.WorkspaceID)) {
+		if s.CanInvoke == nil || !s.CanInvoke(ctx, q, a, e.CreatorID, util.UUIDToString(issue.WorkspaceID)) || !s.CanInvoke(ctx, q, a, user, util.UUIDToString(issue.WorkspaceID)) {
 			return ExecutionReadiness{}, pipeline.Fail("invocation_forbidden", "execution permission no longer available")
 		}
 	}

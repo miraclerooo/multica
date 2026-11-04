@@ -131,7 +131,7 @@ func (s *PipelineService) Reconcile(ctx context.Context, row db.PipelineRun) err
 				job.Set("blocked", "executor_unavailable")
 				continue
 			}
-			if s.CanInvoke == nil || !s.CanInvoke(ctx, agent, run.CreatorID, run.WorkspaceID) {
+			if s.CanInvoke == nil || !s.CanInvoke(ctx, q, agent, run.CreatorID, run.WorkspaceID) {
 				job.Set("blocked", "invocation_forbidden")
 				continue
 			}
@@ -317,7 +317,7 @@ func (s *PipelineService) CheckTask(ctx context.Context, task db.AgentTaskQueue)
 		return pipeline.Fail("revision_conflict", "pipeline task is no longer current")
 	}
 	agent, err := s.Queries.GetAgent(ctx, task.AgentID)
-	if err != nil || agent.ArchivedAt.Valid || s.CanInvoke == nil || !s.CanInvoke(ctx, agent, run.CreatorID, run.WorkspaceID) {
+	if err != nil || agent.ArchivedAt.Valid || s.CanInvoke == nil || !s.CanInvoke(ctx, s.Queries, agent, run.CreatorID, run.WorkspaceID) {
 		return pipeline.Fail("invocation_forbidden", "pipeline executor permission changed")
 	}
 	return nil
