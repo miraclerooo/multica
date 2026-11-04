@@ -14,11 +14,12 @@ import {
   type DetectResult,
 } from "@/features/landing/utils/os-detect";
 import type { LatestRelease } from "@/features/landing/utils/github-release";
+import { daemonCommands } from "@multica/core/runtimes/commands";
 
 const ALL_RELEASES_URL =
   "https://github.com/multica-ai/multica/releases";
 
-export function DownloadClient({ release }: { release: LatestRelease }) {
+export function DownloadClient({ release, repository = "multica-ai/multica", serverUrl, appUrl }: { release: LatestRelease; repository?: string; serverUrl?: string; appUrl?: string }) {
   const [detected, setDetected] = useState<DetectResult | null>(null);
   const versionUnavailable = release.version === null;
 
@@ -33,7 +34,17 @@ export function DownloadClient({ release }: { release: LatestRelease }) {
     };
   }, []);
 
-  const releaseHtmlUrl = release.htmlUrl ?? ALL_RELEASES_URL;
+  const allReleasesUrl = `https://github.com/${repository}/releases`;
+  const releaseHtmlUrl = release.htmlUrl ?? allReleasesUrl;
+  if (repository !== "multica-ai/multica") {
+    const commands = daemonCommands({ status: "ready", target: "self_host", serverUrl, appUrl });
+    return <>
+      <LandingHeader variant="light" />
+      <main><CliSection repository={repository} heading="Multica CLI" setupCmd={commands.status === "ready" ? commands.setupCmd : null} /></main>
+      <VersionInfoFooter version={release.version} releaseHtmlUrl={releaseHtmlUrl} allReleasesUrl={allReleasesUrl} />
+      <LandingFooter />
+    </>;
+  }
 
   return (
     <>
@@ -61,6 +72,7 @@ export function DownloadClient({ release }: { release: LatestRelease }) {
       <VersionInfoFooter
         version={release.version}
         releaseHtmlUrl={releaseHtmlUrl}
+        allReleasesUrl={allReleasesUrl}
       />
       <LandingFooter />
     </>
@@ -70,9 +82,11 @@ export function DownloadClient({ release }: { release: LatestRelease }) {
 function VersionInfoFooter({
   version,
   releaseHtmlUrl,
+  allReleasesUrl,
 }: {
   version: string | null;
   releaseHtmlUrl: string;
+  allReleasesUrl: string;
 }) {
   const { t } = useLocale();
   const d = t.download.footer;
@@ -109,7 +123,7 @@ function VersionInfoFooter({
           </>
         )}
         <Link
-          href={ALL_RELEASES_URL}
+          href={allReleasesUrl}
           className="underline decoration-[#0a0d12]/30 underline-offset-4 hover:text-[#0a0d12] hover:decoration-[#0a0d12]/70"
           target="_blank"
           rel="noreferrer"

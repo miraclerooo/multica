@@ -221,7 +221,7 @@ func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput,
 				return IssueRunTrigger{}, false
 			}
 			resolver := *s.TaskService.Pipelines
-			resolver.CanInvoke = func(ctx context.Context, a db.Agent, _, _ string) bool { return canAccess(a) }
+			resolver.CanInvoke = func(ctx context.Context, _ *db.Queries, a db.Agent, _, _ string) bool { return canAccess(a) }
 			if _, diagnostics := resolver.Bindings(ctx, s.Queries, squad, plan, ""); len(diagnostics) > 0 {
 				return IssueRunTrigger{}, false
 			}

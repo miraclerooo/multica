@@ -335,7 +335,7 @@ func TestPipelineBindingPermissionsAndDefinitionOwnership(t *testing.T) {
 		t.Fatal("ambiguous role accepted")
 	}
 	dbfx.Exec(t, "DELETE FROM squad_member WHERE squad_id=$1 AND member_id=$2", f.squad, second)
-	f.h.Pipelines.CanInvoke = func(context.Context, db.Agent, string, string) bool { return false }
+	f.h.Pipelines.CanInvoke = func(context.Context, *db.Queries, db.Agent, string, string) bool { return false }
 	testutil.Call(t, f.h.CreatePipelineRun, newRequest("POST", "/api/pipeline-runs", map[string]any{"issue_id": f.issue, "squad_id": f.squad, "idempotency_key": "forbidden"})).Want(403)
 	if n := dbfx.Count(t, "SELECT count(*) FROM agent_task_queue WHERE issue_id=$1", f.issue); n != 0 {
 		t.Fatal("forbidden executor queued")
@@ -385,7 +385,7 @@ func TestPipelineLeaderFallbackAndPermissionRecheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.h.Pipelines.CanInvoke = func(context.Context, db.Agent, string, string) bool { return false }
+	f.h.Pipelines.CanInvoke = func(context.Context, *db.Queries, db.Agent, string, string) bool { return false }
 	if err = f.h.Pipelines.CheckTask(context.Background(), task); err == nil {
 		t.Fatal("revoked invocation permission survived claim")
 	}

@@ -14,8 +14,13 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-REPO_URL="https://github.com/multica-ai/multica.git"
-REPO_WEB_URL="https://github.com/multica-ai/multica"  # without .git, for GitHub web APIs
+RELEASE_REPOSITORY="${MULTICA_RELEASE_REPOSITORY:-multica-ai/multica}"
+if [[ ! "$RELEASE_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+  echo "Invalid MULTICA_RELEASE_REPOSITORY" >&2
+  exit 1
+fi
+REPO_URL="https://github.com/${RELEASE_REPOSITORY}.git"
+REPO_WEB_URL="https://github.com/${RELEASE_REPOSITORY}"
 INSTALL_DIR="${MULTICA_INSTALL_DIR:-$HOME/.multica/server}"
 BREW_PACKAGE="multica-ai/tap/multica"
 
@@ -155,7 +160,8 @@ install_cli_binary() {
   fi
 
   local version="${latest#v}"
-  local url="https://github.com/multica-ai/multica/releases/download/${latest}/multica-cli-${version}-${OS}-${ARCH}.tar.gz"
+  local asset="multica-cli-${version}-${OS}-${ARCH}.tar.gz"
+  local url="${REPO_WEB_URL}/releases/download/${latest}/${asset}"
   local tmp_dir
   tmp_dir=$(mktemp -d)
 
@@ -165,11 +171,33 @@ install_cli_binary() {
     fail "Failed to download CLI binary."
   fi
 
+  if [ "$RELEASE_REPOSITORY" != "multica-ai/multica" ]; then
+    if ! curl -fsSL "${REPO_WEB_URL}/releases/download/${latest}/checksums.txt" -o "$tmp_dir/checksums.txt"; then
+      rm -rf "$tmp_dir"
+      fail "Could not download checksums.txt."
+    fi
+    local expected actual
+    expected=$(awk -v name="$asset" '$2 == name {print $1}' "$tmp_dir/checksums.txt")
+    if command_exists sha256sum; then
+      actual=$(sha256sum "$tmp_dir/multica.tar.gz" | awk '{print $1}')
+    else
+      actual=$(shasum -a 256 "$tmp_dir/multica.tar.gz" | awk '{print $1}')
+    fi
+    if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then
+      rm -rf "$tmp_dir"
+      fail "CLI archive checksum verification failed."
+    fi
+  fi
+
   tar -xzf "$tmp_dir/multica.tar.gz" -C "$tmp_dir" multica
 
   # Try /usr/local/bin first, fall back to ~/.local/bin. Tests and scripted
   # installs can override the first choice with MULTICA_BIN_DIR.
   local bin_dir="${MULTICA_BIN_DIR:-/usr/local/bin}"
+  if [ "$RELEASE_REPOSITORY" != "multica-ai/multica" ] && [ -z "${MULTICA_BIN_DIR:-}" ]; then
+    bin_dir="$HOME/.local/bin"
+    mkdir -p "$bin_dir"
+  fi
   if [ -w "$bin_dir" ]; then
     mv "$tmp_dir/multica" "$bin_dir/multica"
   elif command_exists sudo; then
@@ -187,6 +215,10 @@ install_cli_binary() {
   fi
 
   rm -rf "$tmp_dir"
+  if ! echo "$PATH" | tr ':' '\n' | grep -q "^$bin_dir$"; then
+    export PATH="$bin_dir:$PATH"
+    add_to_path "$bin_dir"
+  fi
   ok "Multica CLI installed to $bin_dir/multica"
 }
 
@@ -273,6 +305,9 @@ install_cli() {
 
     local latest_ver
     latest_ver=$(get_latest_version)
+    if [ -z "$latest_ver" ] && [ "$RELEASE_REPOSITORY" != "multica-ai/multica" ]; then
+      fail "Could not determine the configured repository's latest release."
+    fi
 
     # Normalize: strip leading 'v' for comparison
     local current_cmp="${current_ver#v}"
@@ -284,7 +319,7 @@ install_cli() {
     fi
 
     info "Multica CLI $current_ver installed, latest is $latest_ver — upgrading..."
-    if command_exists brew && brew list "$BREW_PACKAGE" >/dev/null 2>&1; then
+    if [ "$RELEASE_REPOSITORY" = "multica-ai/multica" ] && command_exists brew && brew list "$BREW_PACKAGE" >/dev/null 2>&1; then
       upgrade_cli_brew
     else
       install_cli_binary
@@ -296,7 +331,7 @@ install_cli() {
     return 0
   fi
 
-  if command_exists brew; then
+  if [ "$RELEASE_REPOSITORY" = "multica-ai/multica" ] && command_exists brew; then
     install_cli_brew || install_cli_binary
   else
     install_cli_binary
@@ -438,9 +473,14 @@ run_default() {
   printf "\n"
   printf "  ${BOLD}Next: configure your environment${RESET}\n"
   printf "\n"
-  printf "     ${CYAN}multica setup${RESET}                # Connect to Multica Cloud (multica.ai)\n"
+  if [ "$RELEASE_REPOSITORY" = "multica-ai/multica" ]; then
+    printf "     ${CYAN}multica setup${RESET}                # Connect to Multica Cloud (multica.ai)\n"
+  fi
   printf "     ${CYAN}multica setup self-host${RESET}       # Connect to a self-hosted server\n"
   printf "\n"
+  if [ "$RELEASE_REPOSITORY" != "multica-ai/multica" ]; then
+    return
+  fi
   print_remote_server_token_hint
   printf "  ${BOLD}Self-hosting?${RESET} Install the server first:\n"
   printf "     curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash -s -- --with-server\n"

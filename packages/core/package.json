@@ -174,6 +174,8 @@
     "./skills/stores": "./skills/stores/index.ts",
     "./autopilots/stores": "./autopilots/stores/index.ts",
     "./runtimes/qoder": "./runtimes/qoder.ts",
+    "./runtimes/cli-install": "./runtimes/cli-install.ts",
+    "./runtimes/commands": "./runtimes/commands.ts",
     "./pipelines/schema": "./pipelines/schema.ts",
     "./pipelines/utils": "./pipelines/utils.ts",
     "./documents/schema": "./documents/schema.ts",

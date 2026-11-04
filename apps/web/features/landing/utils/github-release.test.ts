@@ -61,6 +61,12 @@ afterEach(() => {
 });
 
 describe("fetchLatestRelease", () => {
+  it("reads custom CLI releases from their own repository", async () => {
+    const fetch = mockFetchWithReleases([releasePayload({ tag: "v0.7.6-ipoke.test" })]);
+    const result = await fetchLatestRelease("miraclerooo/multica");
+    expect(fetch.mock.calls[0]?.[0]).toBe("https://api.github.com/repos/miraclerooo/multica/releases?per_page=5");
+    expect(result.version).toBe("v0.7.6-ipoke.test");
+  });
   it("uses the latest release when its desktop assets are complete", async () => {
     mockFetchWithReleases([
       releasePayload({ tag: "v0.2.14", assets: completeAssets("0.2.14") }),

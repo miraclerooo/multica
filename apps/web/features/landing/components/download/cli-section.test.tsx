@@ -28,6 +28,16 @@ const WINDOWS_CMD =
   "irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex";
 
 describe("CliSection", () => {
+  it("shows the custom installer and self-host setup command together", async () => {
+    const setup = "multica setup self-host --server-url https://ipoke.si --app-url https://ipoke.si";
+    const user = userEvent.setup();
+    render(<CliSection repository="miraclerooo/multica" setupCmd={setup} heading="Multica CLI" />);
+    expect(screen.getByRole("heading", { level: 1, name: "Multica CLI" })).toBeInTheDocument();
+    expect(screen.getByText(setup)).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Windows" }));
+    expect(screen.getByText(/\$env:MULTICA_RELEASE_REPOSITORY='miraclerooo\/multica'/)).toBeInTheDocument();
+    expect(screen.queryByText(WINDOWS_CMD)).toBeNull();
+  });
   // The switch itself is covered in @multica/views; this checks the landing
   // dictionary is wired into it and the daemon block stays shared.
   it("wires the platform switch into the install block", async () => {

@@ -33,6 +33,9 @@ export interface SaveDocumentInput {
   body: string;
   base_version: number;
 }
+export interface DeleteDocumentInput {
+  base_version: number;
+}
 
 export const DocumentListSchema = z.object({
   documents: z.array(ProjectDocumentSchema).default([]),

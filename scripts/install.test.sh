@@ -509,6 +509,54 @@ STUB
   fi
 }
 
+test_custom_repository_uses_own_archives_and_checksums() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+  _setup_sandbox "$tmp"
+  local checksum
+  checksum=$(shasum -a 256 "$tmp/multica.tar.gz" | awk '{print $1}')
+  printf '%s  multica-cli-0.3.2-darwin-arm64.tar.gz\n%s  multica-cli-0.3.2-darwin-amd64.tar.gz\n%s  multica-cli-0.3.2-linux-amd64.tar.gz\n%s  multica-cli-0.3.2-linux-arm64.tar.gz\n' "$checksum" "$checksum" "$checksum" "$checksum" > "$tmp/checksums.txt"
+  cat > "$tmp/stub-bin/curl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$MULTICA_TEST_URL_LOG"
+if [[ "$*" == *"-sI"* ]]; then
+  printf 'HTTP/2 302\r\nlocation: https://github.com/example/fork/releases/tag/v0.3.2\r\n'
+  exit 0
+fi
+payload="$MULTICA_TEST_ARCHIVE"
+if [[ "$*" == *"checksums.txt"* ]]; then payload="$MULTICA_TEST_CHECKSUMS"; fi
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "-o" ]]; then cp "$payload" "$2"; exit 0; fi
+  shift
+done
+exit 2
+STUB
+  cat > "$tmp/stub-bin/brew" <<'STUB'
+#!/usr/bin/env bash
+echo 'custom installation called brew' >&2
+exit 99
+STUB
+  chmod +x "$tmp/stub-bin/curl" "$tmp/stub-bin/brew"
+  PATH="$tmp/stub-bin:$tmp/install-bin:/usr/bin:/bin" \
+    MULTICA_RELEASE_REPOSITORY=example/fork MULTICA_BIN_DIR="$tmp/install-bin" \
+    MULTICA_TEST_ARCHIVE="$tmp/multica.tar.gz" MULTICA_TEST_CHECKSUMS="$tmp/checksums.txt" MULTICA_TEST_URL_LOG="$tmp/urls" \
+    bash "$ROOT_DIR/scripts/install.sh" > "$tmp/install.out" 2> "$tmp/install.err"
+  test -x "$tmp/install-bin/multica"
+  if grep -q 'multica-ai/' "$tmp/urls"; then echo 'custom installer used official source' >&2; return 1; fi
+  grep -q 'example/fork/releases/download/v0.3.2/checksums.txt' "$tmp/urls"
+  rm "$tmp/install-bin/multica"
+  printf 'invalid-checksum  multica-cli-0.3.2-darwin-arm64.tar.gz\n' > "$tmp/checksums.txt"
+  if PATH="$tmp/stub-bin:$tmp/install-bin:/usr/bin:/bin" \
+    MULTICA_RELEASE_REPOSITORY=example/fork MULTICA_BIN_DIR="$tmp/install-bin" \
+    MULTICA_TEST_ARCHIVE="$tmp/multica.tar.gz" MULTICA_TEST_CHECKSUMS="$tmp/checksums.txt" MULTICA_TEST_URL_LOG="$tmp/urls" \
+    bash "$ROOT_DIR/scripts/install.sh" > "$tmp/failed.out" 2> "$tmp/failed.err"; then
+    echo 'custom installer accepted invalid checksum' >&2; return 1
+  fi
+  test ! -e "$tmp/install-bin/multica"
+}
+
+test_custom_repository_uses_own_archives_and_checksums
 test_brew_install_failure_falls_back_to_release_binary
 test_brew_tap_failure_falls_back_to_release_binary
 test_remote_ssh_install_prints_token_login_hint

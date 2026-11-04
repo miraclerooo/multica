@@ -81,4 +81,28 @@ describe("document API boundary", () => {
       total: 0,
     });
   });
+  it("acknowledges deletion only after the API succeeds with the explicit base version", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetch);
+    const client = new ApiClient("https://api.example.test");
+    await expect(
+      client.deleteProjectDocument("project", "doc", { base_version: 2 }),
+    ).resolves.toBeUndefined();
+    expect(fetch.mock.calls[0]![0]).toBe(
+      "https://api.example.test/api/projects/project/documents/doc",
+    );
+    expect(fetch.mock.calls[0]![1]).toMatchObject({
+      method: "DELETE",
+      body: JSON.stringify({ base_version: 2 }),
+    });
+    fetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({ code: "document_version_conflict", error: "changed" }),
+        { status: 409 },
+      ),
+    );
+    await expect(
+      client.deleteProjectDocument("project", "doc", { base_version: 2 }),
+    ).rejects.toThrow();
+  });
 });

@@ -12,8 +12,10 @@ $ErrorActionPreference = "Stop"
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-$RepoUrl       = "https://github.com/multica-ai/multica.git"
-$RepoWebUrl    = "https://github.com/multica-ai/multica"
+$ReleaseRepository = if ($env:MULTICA_RELEASE_REPOSITORY) { $env:MULTICA_RELEASE_REPOSITORY } else { "multica-ai/multica" }
+if ($ReleaseRepository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw "Invalid MULTICA_RELEASE_REPOSITORY" }
+$RepoUrl       = "https://github.com/$ReleaseRepository.git"
+$RepoWebUrl    = "https://github.com/$ReleaseRepository"
 $DefaultInstallDir = Join-Path $env:USERPROFILE ".multica\server"
 $InstallDir    = if ($env:MULTICA_INSTALL_DIR) { $env:MULTICA_INSTALL_DIR } else { $DefaultInstallDir }
 
@@ -86,7 +88,7 @@ function Get-ComposePublishedPort {
 
 function Get-LatestVersion {
     try {
-        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/multica-ai/multica/releases/latest" -ErrorAction Stop
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$ReleaseRepository/releases/latest" -ErrorAction Stop
         return $release.tag_name
     } catch {
         return $null
@@ -247,7 +249,7 @@ function Install-CliBinary {
     }
 
     $version = $latest.TrimStart('v')
-    $url = "https://github.com/multica-ai/multica/releases/download/$latest/multica-cli-$version-windows-$arch.zip"
+    $url = "$RepoWebUrl/releases/download/$latest/multica-cli-$version-windows-$arch.zip"
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "multica-install"
 
     if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
@@ -262,7 +264,7 @@ function Install-CliBinary {
     }
 
     # Verify SHA256 checksum
-    $checksumUrl = "https://github.com/multica-ai/multica/releases/download/$latest/checksums.txt"
+    $checksumUrl = "$RepoWebUrl/releases/download/$latest/checksums.txt"
     try {
         $checksums = Invoke-WebRequest -Uri $checksumUrl -UseBasicParsing -ErrorAction Stop
         $checksumContent = if ($checksums.Content -is [byte[]]) {
@@ -288,9 +290,14 @@ function Install-CliBinary {
             }
             Write-Ok "Checksum verified"
         } else {
+            if ($ReleaseRepository -ne "multica-ai/multica") { throw "Missing checksum entry for $releaseAsset" }
             Write-Warn "Could not find checksum entry for $releaseAsset - skipping verification."
         }
     } catch {
+        if ($ReleaseRepository -ne "multica-ai/multica") {
+            Remove-Item $tmpDir -Recurse -Force
+            Write-Fail "Could not verify CLI archive: $_"
+        }
         Write-Warn "Could not download checksums.txt - skipping verification."
     }
 
@@ -495,8 +502,11 @@ function Start-DefaultInstall {
     Write-Host ""
     Write-Host "  Next: configure your environment"
     Write-Host ""
-    Write-Host "     multica setup               " -NoNewline; Write-Host "# Connect to Multica Cloud (multica.ai)" -ForegroundColor DarkGray
+    if ($ReleaseRepository -eq "multica-ai/multica") {
+        Write-Host "     multica setup               " -NoNewline; Write-Host "# Connect to Multica Cloud (multica.ai)" -ForegroundColor DarkGray
+    }
     Write-Host "     multica setup self-host      " -NoNewline; Write-Host "# Connect to a self-hosted server" -ForegroundColor DarkGray
+    if ($ReleaseRepository -ne "multica-ai/multica") { return }
     Write-Host ""
     Write-Host "  Self-hosting? Install the server first:"
     Write-Host '     $env:MULTICA_MODE="with-server"; irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex'

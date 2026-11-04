@@ -33,6 +33,22 @@ const ChecksumManifestName = "checksums.txt"
 
 const defaultReleaseAPIBaseURL = "https://api.github.com"
 
+const officialReleaseRepository = "multica-ai/multica"
+
+// Publishers embed their repository so manual updates stay on the same channel.
+var releaseRepository = officialReleaseRepository
+
+func ReleaseRepository() string {
+	if value := strings.TrimSpace(os.Getenv("MULTICA_RELEASE_REPOSITORY")); value != "" {
+		return value
+	}
+	return releaseRepository
+}
+
+func UsesOfficialReleaseSource() bool {
+	return ReleaseRepository() == officialReleaseRepository && releaseAPIBaseURL() == defaultReleaseAPIBaseURL && releaseDownloadBaseURL() == ""
+}
+
 // MULTICA_RELEASE_API_BASE_URL points at a GitHub Releases API-compatible
 // mirror. MULTICA_RELEASE_DOWNLOAD_BASE_URL points at an artifact mirror
 // serving /<tag>/<asset-name>; when unset, the release-provided URLs win.
@@ -254,7 +270,7 @@ func verifyAssetSHA256(data []byte, expectedHex, assetName string) error {
 
 func fetchReleaseByTag(tag string) (*GitHubRelease, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, releaseAPIBaseURL()+"/repos/multica-ai/multica/releases/tags/"+url.PathEscape(tag), nil)
+	req, err := http.NewRequest(http.MethodGet, releaseAPIBaseURL()+"/repos/"+ReleaseRepository()+"/releases/tags/"+url.PathEscape(tag), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +296,7 @@ func fetchReleaseByTag(tag string) (*GitHubRelease, error) {
 // FetchLatestRelease fetches the latest release tag from the multica GitHub repo.
 func FetchLatestRelease() (*GitHubRelease, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, releaseAPIBaseURL()+"/repos/multica-ai/multica/releases/latest", nil)
+	req, err := http.NewRequest(http.MethodGet, releaseAPIBaseURL()+"/repos/"+ReleaseRepository()+"/releases/latest", nil)
 	if err != nil {
 		return nil, err
 	}

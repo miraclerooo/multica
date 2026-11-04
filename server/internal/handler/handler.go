@@ -213,7 +213,7 @@ type RuntimeRecoveryNotifier interface {
 }
 
 type Handler struct {
-	Pipelines *service.PipelineService
+	Pipelines              *service.PipelineService
 	Queries                *db.Queries
 	ReadSelector           *dbreader.Selector
 	DB                     dbExecutor
@@ -992,6 +992,10 @@ func countOwners(members []db.Member) int {
 }
 
 func (h *Handler) getWorkspaceMember(ctx context.Context, userID, workspaceID string) (db.Member, error) {
+	return getWorkspaceMemberWithQueries(ctx, h.Queries, userID, workspaceID)
+}
+
+func getWorkspaceMemberWithQueries(ctx context.Context, q *db.Queries, userID, workspaceID string) (db.Member, error) {
 	userUUID, err := util.ParseUUID(userID)
 	if err != nil {
 		return db.Member{}, err
@@ -1000,7 +1004,7 @@ func (h *Handler) getWorkspaceMember(ctx context.Context, userID, workspaceID st
 	if err != nil {
 		return db.Member{}, err
 	}
-	return h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+	return q.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
 		UserID:      userUUID,
 		WorkspaceID: wsUUID,
 	})

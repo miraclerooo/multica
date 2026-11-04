@@ -106,7 +106,7 @@ func TestPipelineV17CandidatesAndBindingAuthorization(t *testing.T) {
 		t.Fatal("archived agent accepted")
 	}
 	dbfx.Exec(t, "UPDATE agent SET archived_at=NULL WHERE id=$1", chosen)
-	f.h.Pipelines.CanInvoke = func(context.Context, db.Agent, string, string) bool { return false }
+	f.h.Pipelines.CanInvoke = func(context.Context, *db.Queries, db.Agent, string, string) bool { return false }
 	_, diags = f.h.Pipelines.Bindings(context.Background(), f.h.Queries, squad, *v.Plan, testUserID)
 	if len(diags) == 0 || diags[0].Code != "invocation_forbidden" {
 		t.Fatalf("invocation permission ignored: %+v", diags)

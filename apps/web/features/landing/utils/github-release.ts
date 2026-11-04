@@ -36,8 +36,6 @@ export interface LatestRelease {
 // the page has to fall back to showing the newest one as-is. Releases
 // ship roughly daily, so that is days of head room — while staying one
 // cheap request.
-const GITHUB_RELEASES_URL =
-  "https://api.github.com/repos/multica-ai/multica/releases?per_page=5";
 
 const REVALIDATE_SECONDS = 300;
 
@@ -50,7 +48,8 @@ interface GitHubReleasePayload {
   assets?: Array<{ name: string; browser_download_url: string }>;
 }
 
-export async function fetchLatestRelease(): Promise<LatestRelease> {
+export async function fetchLatestRelease(repository = "multica-ai/multica"): Promise<LatestRelease> {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error("Invalid release repository");
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
@@ -67,7 +66,7 @@ export async function fetchLatestRelease(): Promise<LatestRelease> {
   }
 
   try {
-    const res = await fetch(GITHUB_RELEASES_URL, {
+    const res = await fetch(`https://api.github.com/repos/${repository}/releases?per_page=5`, {
       next: { revalidate: REVALIDATE_SECONDS },
       headers,
     });

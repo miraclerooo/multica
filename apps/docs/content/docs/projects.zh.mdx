@@ -57,11 +57,18 @@ import { ProjectDemo } from "@/components/demos/project-demo";
 multica project document list <project-id> --output json
 multica project document get <project-id> <document-id-or-uri> --output markdown
 multica project document create <project-id> --kind spec --title "功能规范"
-multica project document update <project-id> <document-id> --base-version 2 --title "功能规范" --body-file ./spec.md
+multica project document create <project-id> --title "项目纪要" --body "首次记录"
+multica project document update <project-id> <document-id> --base-version 2 --body-file ./spec.md
+multica project document update <project-id> <document-id> --base-version 3 --title "更新后的功能规范"
 multica project document history <project-id> <document-id>
+multica project document delete <project-id> <document-id> --base-version 4
 ```
 
-`--base-version` 必须是实际读取过的版本。收到 409 后先读取并对比新版本，再重新提交。引用格式为 `multica://project/<project-id>/documents/<document-id>`，可用 `project document get` 读取；资源接口 `GET /api/projects/{id}/resources/{resourceId}/content` 也能解析最新内容。浏览器中未保存的草稿不会提供给运行。
+项目支持完整 UUID 或唯一的 ID 前缀。正文可通过 `--body` 直接传入，或用 `--body-file -` 从标准输入读取，保留换行和字面反斜杠；两种方式互斥。修改时，省略标题或正文会保留指定基础版本的对应字段；传入 `--body ""` 可以明确清空正文。
+
+修改和删除都需要传入实际读取过的 `--base-version`。收到 409 后先读取并对比新版本，再重新提交。删除会将文档移出项目与任务的文档列表和活动资源；历史修订、流水线固定材料和来源记录仍可通过 `history`、`sources` 或 `get --version` 读取。删除文档不会代替流水线审批或取消运行。
+
+引用格式为 `multica://project/<project-id>/documents/<document-id>`，可用 `project document get` 读取；资源接口 `GET /api/projects/{id}/resources/{resourceId}/content` 也能解析最新内容。浏览器中未保存的草稿不会提供给运行。
 
 ## 添加资源
 

@@ -40,3 +40,19 @@ unresolved reachable vulnerability.
 
 Every Go binary retains its compiler version in the standard Go build metadata;
 use `go version -m <binary>` when auditing a downloaded release artifact.
+
+## ipoke CLI channel
+
+Tag an approved main commit as `vX.Y.Z-ipoke.<commit-prefix>` (at least seven
+hex characters). The separate **ipoke CLI Release** workflow migrates an
+isolated PostgreSQL database, runs the guarded Go suite and govulncheck, then
+publishes six CLI archives with checksums to the current repository. It does
+not publish the upstream Homebrew package or desktop installers.
+
+The build embeds the current repository as the update source. Set
+`MULTICA_CLI_RELEASE_REPOSITORY` on both backend and web build/runtime to show
+that repository's install commands on the download page and runtime setup
+surfaces. The web build also needs `MULTICA_DAEMON_SERVER_URL` and
+`MULTICA_APP_URL` for the self-host setup command. Install scripts take
+`MULTICA_RELEASE_REPOSITORY`; custom installs verify checksums and use direct
+archives. `multica version --output json` reports `release_repository`.

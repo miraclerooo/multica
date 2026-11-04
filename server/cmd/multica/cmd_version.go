@@ -6,6 +6,8 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/multica-ai/multica/server/internal/cli"
+
 	"github.com/spf13/cobra"
 )
 
@@ -25,16 +27,17 @@ func runVersion(cmd *cobra.Command, _ []string) error {
 	if output == "json" {
 		build := currentBuildInfo()
 		info := map[string]any{
-			"version":           version,
-			"commit":            commit,
-			"build_commit":      build.Commit,
-			"date":              date,
-			"go":                runtime.Version(),
-			"os":                runtime.GOOS,
-			"arch":              runtime.GOARCH,
-			"capabilities":      build.Capabilities,
-			"release_channel":   build.ReleaseChannel,
-			"upgrade_guide_url": build.UpgradeGuideURL,
+			"version":            version,
+			"commit":             commit,
+			"build_commit":       build.Commit,
+			"date":               date,
+			"go":                 runtime.Version(),
+			"os":                 runtime.GOOS,
+			"arch":               runtime.GOARCH,
+			"capabilities":       build.Capabilities,
+			"release_channel":    build.ReleaseChannel,
+			"release_repository": cli.ReleaseRepository(),
+			"upgrade_guide_url":  build.UpgradeGuideURL,
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")

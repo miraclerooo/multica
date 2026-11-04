@@ -44,7 +44,7 @@ func (h *Handler) ListDocumentSources(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.requireWorkspaceMember(w, r, h.resolveWorkspaceID(r), "workspace not found"); !ok {
 		return
 	}
-	d, ok := h.loadProjectDocument(w, r)
+	d, ok := h.loadProjectDocumentSnapshot(w, r, true)
 	if !ok {
 		return
 	}

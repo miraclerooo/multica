@@ -24,6 +24,9 @@ export const metadata: Metadata = {
 };
 
 export default async function DownloadPage() {
-  const release = await fetchLatestRelease();
-  return <DownloadClient release={release} />;
+  const repository = process.env.MULTICA_CLI_RELEASE_REPOSITORY || "multica-ai/multica";
+  const release = await fetchLatestRelease(repository);
+  return <DownloadClient release={release} repository={repository}
+    serverUrl={process.env.MULTICA_DAEMON_SERVER_URL || process.env.MULTICA_PUBLIC_URL}
+    appUrl={process.env.MULTICA_APP_URL} />;
 }

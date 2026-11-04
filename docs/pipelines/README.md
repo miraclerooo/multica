@@ -271,6 +271,9 @@ Documents without a live same-project association remain Project materials.
 
 | Method / path | Contract |
 | --- | --- |
+| POST `/api/projects/:project/documents` | `{title,body?,kind?}` creates Markdown in the specified project |
+| PUT `/api/projects/:project/documents/:document` | `{title,body,base_version}` saves a full revision; stale versions return `document_version_conflict` (409) |
+| DELETE `/api/projects/:project/documents/:document` | `{base_version}`; 204 removes active document/resources, preserving revisions, sources and frozen pipeline materials; stale versions return the same 409 conflict |
 | GET `/api/projects/:project/documents?q=...&issue_id=...` | Existing flat `documents,total`, plus `groups` with `issue_id` (null for project materials), `identifier,title,count,documents`; search matches task identifier/title and Markdown title/body |
 | GET `/api/issues/:issue/documents` | Current documents, groups and reverse `references` containing `document_id,issue_id,document_version,sources` |
 | POST `/api/issues/:issue/documents` | Associate existing or new Markdown and optionally append one validated source; returns `document,inserted,replayed,linked` |
@@ -278,6 +281,14 @@ Documents without a live same-project association remain Project materials.
 | GET `/api/projects/:project/documents/:document/sources` | Source records with source key, insertion revision and full pinned provenance |
 | GET `/api/projects/:project/documents/:document/revisions/:version` | Immutable document snapshot |
 | GET `/api/projects/:project/documents/:document/revisions/:version/content` | Authenticated `text/markdown` content for that revision |
+
+CLI project CRUD uses `project document create/list/get/update/delete <project-id>`.
+Creation and update accept mutually exclusive `--body` and `--body-file` (`-`
+reads stdin). Partial CLI updates read the explicitly selected immutable base
+revision and send the API's full snapshot; they never fetch a newer base and
+silently retry. Update and delete both require `--base-version`. Deleted documents
+are excluded from current reads and associations; history, fixed revision reads,
+source records and existing pipeline artifacts remain available to project members.
 
 For an existing Markdown document:
 

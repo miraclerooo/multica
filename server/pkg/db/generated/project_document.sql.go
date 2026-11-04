@@ -14,7 +14,7 @@ import (
 const createProjectDocument = `-- name: CreateProjectDocument :one
 INSERT INTO project_document (workspace_id, project_id, kind, title, body, author_type, author_id, author_name)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, workspace_id, project_id, kind, title, body, version, author_type, author_id, author_name, created_at, updated_at
+RETURNING id, workspace_id, project_id, kind, title, body, version, author_type, author_id, author_name, created_at, updated_at, deleted_at
 `
 
 type CreateProjectDocumentParams struct {
@@ -53,6 +53,7 @@ func (q *Queries) CreateProjectDocument(ctx context.Context, arg CreateProjectDo
 		&i.AuthorName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -72,6 +73,49 @@ type CreateProjectDocumentRevisionParams struct {
 func (q *Queries) CreateProjectDocumentRevision(ctx context.Context, arg CreateProjectDocumentRevisionParams) error {
 	_, err := q.db.Exec(ctx, createProjectDocumentRevision, arg.ID, arg.WorkspaceID, arg.ProjectID)
 	return err
+}
+
+const deleteProjectDocumentResources = `-- name: DeleteProjectDocumentResources :many
+DELETE FROM project_resource
+WHERE workspace_id = $1 AND project_id = $2 AND resource_type = 'project_document'
+    AND resource_ref->>'document_id' = $3::text
+RETURNING id, project_id, workspace_id, resource_type, resource_ref, label, position, created_at, created_by
+`
+
+type DeleteProjectDocumentResourcesParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	DocumentID  string      `json:"document_id"`
+}
+
+func (q *Queries) DeleteProjectDocumentResources(ctx context.Context, arg DeleteProjectDocumentResourcesParams) ([]ProjectResource, error) {
+	rows, err := q.db.Query(ctx, deleteProjectDocumentResources, arg.WorkspaceID, arg.ProjectID, arg.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectResource{}
+	for rows.Next() {
+		var i ProjectResource
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.WorkspaceID,
+			&i.ResourceType,
+			&i.ResourceRef,
+			&i.Label,
+			&i.Position,
+			&i.CreatedAt,
+			&i.CreatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteProjectDocumentRevisionsByProject = `-- name: DeleteProjectDocumentRevisionsByProject :exec
@@ -103,8 +147,8 @@ func (q *Queries) DeleteProjectDocumentsByProject(ctx context.Context, arg Delet
 }
 
 const getProjectDocument = `-- name: GetProjectDocument :one
-SELECT id, workspace_id, project_id, kind, title, body, version, author_type, author_id, author_name, created_at, updated_at FROM project_document
-WHERE id = $1 AND workspace_id = $2 AND project_id = $3
+SELECT id, workspace_id, project_id, kind, title, body, version, author_type, author_id, author_name, created_at, updated_at, deleted_at FROM project_document
+WHERE id = $1 AND workspace_id = $2 AND project_id = $3 AND deleted_at IS NULL
 `
 
 type GetProjectDocumentParams struct {
@@ -129,6 +173,39 @@ func (q *Queries) GetProjectDocument(ctx context.Context, arg GetProjectDocument
 		&i.AuthorName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getProjectDocumentIncludingDeleted = `-- name: GetProjectDocumentIncludingDeleted :one
+SELECT id, workspace_id, project_id, kind, title, body, version, author_type, author_id, author_name, created_at, updated_at, deleted_at FROM project_document
+WHERE id = $1 AND workspace_id = $2 AND project_id = $3
+`
+
+type GetProjectDocumentIncludingDeletedParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
+func (q *Queries) GetProjectDocumentIncludingDeleted(ctx context.Context, arg GetProjectDocumentIncludingDeletedParams) (ProjectDocument, error) {
+	row := q.db.QueryRow(ctx, getProjectDocumentIncludingDeleted, arg.ID, arg.WorkspaceID, arg.ProjectID)
+	var i ProjectDocument
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.Kind,
+		&i.Title,
+		&i.Body,
+		&i.Version,
+		&i.AuthorType,
+		&i.AuthorID,
+		&i.AuthorName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -179,8 +256,8 @@ func (q *Queries) ListProjectDocumentRevisions(ctx context.Context, arg ListProj
 }
 
 const listProjectDocuments = `-- name: ListProjectDocuments :many
-SELECT id, workspace_id, project_id, kind, title, body, version, author_type, author_id, author_name, created_at, updated_at FROM project_document
-WHERE workspace_id = $1 AND project_id = $2
+SELECT id, workspace_id, project_id, kind, title, body, version, author_type, author_id, author_name, created_at, updated_at, deleted_at FROM project_document
+WHERE workspace_id = $1 AND project_id = $2 AND deleted_at IS NULL
 ORDER BY updated_at DESC, id
 `
 
@@ -211,6 +288,7 @@ func (q *Queries) ListProjectDocuments(ctx context.Context, arg ListProjectDocum
 			&i.AuthorName,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -248,8 +326,8 @@ func (q *Queries) RenameProjectDocumentResource(ctx context.Context, arg RenameP
 const saveProjectDocument = `-- name: SaveProjectDocument :one
 UPDATE project_document SET title = $4, body = $5, version = version + 1,
     author_type = $6, author_id = $7, author_name = $8, updated_at = now()
-WHERE id = $1 AND workspace_id = $2 AND project_id = $3 AND version = $9
-RETURNING id, workspace_id, project_id, kind, title, body, version, author_type, author_id, author_name, created_at, updated_at
+WHERE id = $1 AND workspace_id = $2 AND project_id = $3 AND version = $9 AND deleted_at IS NULL
+RETURNING id, workspace_id, project_id, kind, title, body, version, author_type, author_id, author_name, created_at, updated_at, deleted_at
 `
 
 type SaveProjectDocumentParams struct {
@@ -290,6 +368,47 @@ func (q *Queries) SaveProjectDocument(ctx context.Context, arg SaveProjectDocume
 		&i.AuthorName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const softDeleteProjectDocument = `-- name: SoftDeleteProjectDocument :one
+UPDATE project_document SET deleted_at = now()
+WHERE id = $1 AND workspace_id = $2 AND project_id = $3
+    AND version = $4 AND deleted_at IS NULL
+RETURNING id, workspace_id, project_id, kind, title, body, version, author_type, author_id, author_name, created_at, updated_at, deleted_at
+`
+
+type SoftDeleteProjectDocumentParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	BaseVersion int32       `json:"base_version"`
+}
+
+func (q *Queries) SoftDeleteProjectDocument(ctx context.Context, arg SoftDeleteProjectDocumentParams) (ProjectDocument, error) {
+	row := q.db.QueryRow(ctx, softDeleteProjectDocument,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.BaseVersion,
+	)
+	var i ProjectDocument
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.Kind,
+		&i.Title,
+		&i.Body,
+		&i.Version,
+		&i.AuthorType,
+		&i.AuthorID,
+		&i.AuthorName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }

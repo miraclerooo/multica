@@ -282,6 +282,8 @@ func TestDocumentAssociationPinnedPipelineArtifactAndDocumentRevision(t *testing
 	if provenance.TaskID != task || provenance.RunID != f.run || provenance.JobID != "read_sources" || provenance.Attempt != 1 || provenance.Artifact.DocumentVersion != 1 || !provenance.Verified || provenance.Mutable {
 		t.Fatalf("lost pipeline provenance: %+v", provenance)
 	}
+	testutil.Call(t, f.h.DeleteProjectDocument, documentTestRequest("DELETE", project, document.ID, map[string]any{"base_version": 2})).Want(204)
+	testutil.Call(t, f.h.GetProjectDocument, documentTestRequest("GET", project, document.ID, nil)).Want(404)
 	rec := httptest.NewRecorder()
 	req := f.request("GET", "", nil)
 	req.URL.RawQuery = url.Values{"artifact_id": {inputs[0].ID}}.Encode()

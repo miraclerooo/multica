@@ -150,7 +150,7 @@ function Counts({
       </div>
       {counts.total > 0 && (
         <div
-          className="h-1.5 flex rounded bg-muted overflow-hidden"
+          className="h-1.5 flex rounded-sm bg-muted overflow-hidden"
           aria-hidden
         >
           <span

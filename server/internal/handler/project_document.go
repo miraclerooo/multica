@@ -71,6 +71,10 @@ func (h *Handler) ListProjectDocuments(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) loadProjectDocument(w http.ResponseWriter, r *http.Request) (db.ProjectDocument, bool) {
+	return h.loadProjectDocumentSnapshot(w, r, false)
+}
+
+func (h *Handler) loadProjectDocumentSnapshot(w http.ResponseWriter, r *http.Request, includeDeleted bool) (db.ProjectDocument, bool) {
 	p, ok := h.loadProjectForResource(w, r, chi.URLParam(r, "id"))
 	if !ok {
 		return db.ProjectDocument{}, false
@@ -79,7 +83,13 @@ func (h *Handler) loadProjectDocument(w http.ResponseWriter, r *http.Request) (d
 	if !ok {
 		return db.ProjectDocument{}, false
 	}
-	d, err := h.Queries.GetProjectDocument(r.Context(), db.GetProjectDocumentParams{ID: id, WorkspaceID: p.WorkspaceID, ProjectID: p.ID})
+	var d db.ProjectDocument
+	var err error
+	if includeDeleted {
+		d, err = h.Queries.GetProjectDocumentIncludingDeleted(r.Context(), db.GetProjectDocumentIncludingDeletedParams{ID: id, WorkspaceID: p.WorkspaceID, ProjectID: p.ID})
+	} else {
+		d, err = h.Queries.GetProjectDocument(r.Context(), db.GetProjectDocumentParams{ID: id, WorkspaceID: p.WorkspaceID, ProjectID: p.ID})
+	}
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, 404, "document not found")
@@ -287,8 +297,71 @@ func (h *Handler) publishDocumentChange(d db.ProjectDocument) {
 	h.publish(protocol.EventProjectDocumentUpdated, uuidToString(d.WorkspaceID), d.AuthorType, uuidToString(d.AuthorID), map[string]any{"project_id": uuidToString(d.ProjectID), "document_id": uuidToString(d.ID), "version": d.Version})
 }
 
-func (h *Handler) ListProjectDocumentRevisions(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) DeleteProjectDocument(w http.ResponseWriter, r *http.Request) {
 	d, ok := h.loadProjectDocument(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		BaseVersion int32 `json:"base_version"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&input); err != nil || input.BaseVersion < 1 {
+		writeError(w, 400, "a positive base_version is required")
+		return
+	}
+	authorType, authorID, _, ok := h.projectDocumentAuthor(w, r, d.WorkspaceID)
+	if !ok {
+		return
+	}
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, 500, "failed to start document deletion")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	q := h.Queries.WithTx(tx)
+	if _, err := q.LockWorkspaceForChatSessionCreate(r.Context(), d.WorkspaceID); err != nil {
+		writeError(w, 404, "workspace not found")
+		return
+	}
+	if _, err := q.LockProjectForChatSessionCreate(r.Context(), db.LockProjectForChatSessionCreateParams{ID: d.ProjectID, WorkspaceID: d.WorkspaceID}); err != nil {
+		writeError(w, 404, "project not found")
+		return
+	}
+	_, err = q.SoftDeleteProjectDocument(r.Context(), db.SoftDeleteProjectDocumentParams{ID: d.ID, WorkspaceID: d.WorkspaceID, ProjectID: d.ProjectID, BaseVersion: input.BaseVersion})
+	if errors.Is(err, pgx.ErrNoRows) {
+		latest, readErr := q.GetProjectDocument(r.Context(), db.GetProjectDocumentParams{ID: d.ID, WorkspaceID: d.WorkspaceID, ProjectID: d.ProjectID})
+		if readErr != nil {
+			writeError(w, 404, "document not found")
+			return
+		}
+		writeJSON(w, 409, map[string]any{"code": "document_version_conflict", "error": "document changed; read the latest revision before deleting", "latest": projectDocumentToResponse(latest)})
+		return
+	}
+	if err != nil {
+		writeError(w, 500, "failed to delete document")
+		return
+	}
+	resources, err := q.DeleteProjectDocumentResources(r.Context(), db.DeleteProjectDocumentResourcesParams{WorkspaceID: d.WorkspaceID, ProjectID: d.ProjectID, DocumentID: uuidToString(d.ID)})
+	if err != nil {
+		writeError(w, 500, "failed to remove document resources")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, 500, "failed to commit document deletion")
+		return
+	}
+	for _, resource := range resources {
+		h.publish(protocol.EventProjectResourceDeleted, uuidToString(d.WorkspaceID), authorType, uuidToString(authorID), map[string]any{"project_id": uuidToString(d.ProjectID), "resource_id": uuidToString(resource.ID)})
+	}
+	h.publish(protocol.EventProjectDocumentUpdated, uuidToString(d.WorkspaceID), authorType, uuidToString(authorID), map[string]any{"project_id": uuidToString(d.ProjectID), "document_id": uuidToString(d.ID), "version": d.Version, "deleted": true})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) ListProjectDocumentRevisions(w http.ResponseWriter, r *http.Request) {
+	d, ok := h.loadProjectDocumentSnapshot(w, r, true)
 	if !ok {
 		return
 	}

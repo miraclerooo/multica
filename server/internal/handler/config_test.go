@@ -68,6 +68,7 @@ func TestGetConfigIncludesRuntimeAuthConfig(t *testing.T) {
 	t.Setenv("MULTICA_DAEMON_SERVER_URL", "")
 	t.Setenv("MULTICA_PUBLIC_URL", "https://api.example.com/")
 	t.Setenv("MULTICA_APP_URL", "https://app.example.com/")
+	t.Setenv("MULTICA_CLI_RELEASE_REPOSITORY", "miraclerooo/multica")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -93,6 +94,9 @@ func TestGetConfigIncludesRuntimeAuthConfig(t *testing.T) {
 	}
 	if cfg.GoogleClientID != "google-client-id" {
 		t.Fatalf("google_client_id: want google-client-id, got %q", cfg.GoogleClientID)
+	}
+	if cfg.CLIReleaseRepository != "miraclerooo/multica" {
+		t.Fatalf("CLI repository = %q", cfg.CLIReleaseRepository)
 	}
 	if cfg.PosthogKey != "phc_test" {
 		t.Fatalf("posthog_key: want phc_test, got %q", cfg.PosthogKey)

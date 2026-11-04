@@ -1,9 +1,13 @@
 -- name: ListProjectDocuments :many
 SELECT * FROM project_document
-WHERE workspace_id = $1 AND project_id = $2
+WHERE workspace_id = $1 AND project_id = $2 AND deleted_at IS NULL
 ORDER BY updated_at DESC, id;
 
 -- name: GetProjectDocument :one
+SELECT * FROM project_document
+WHERE id = $1 AND workspace_id = $2 AND project_id = $3 AND deleted_at IS NULL;
+
+-- name: GetProjectDocumentIncludingDeleted :one
 SELECT * FROM project_document
 WHERE id = $1 AND workspace_id = $2 AND project_id = $3;
 
@@ -15,7 +19,19 @@ RETURNING *;
 -- name: SaveProjectDocument :one
 UPDATE project_document SET title = $4, body = $5, version = version + 1,
     author_type = $6, author_id = $7, author_name = $8, updated_at = now()
-WHERE id = $1 AND workspace_id = $2 AND project_id = $3 AND version = sqlc.arg(base_version)
+WHERE id = $1 AND workspace_id = $2 AND project_id = $3 AND version = sqlc.arg(base_version) AND deleted_at IS NULL
+RETURNING *;
+
+-- name: SoftDeleteProjectDocument :one
+UPDATE project_document SET deleted_at = now()
+WHERE id = $1 AND workspace_id = $2 AND project_id = $3
+    AND version = sqlc.arg(base_version) AND deleted_at IS NULL
+RETURNING *;
+
+-- name: DeleteProjectDocumentResources :many
+DELETE FROM project_resource
+WHERE workspace_id = $1 AND project_id = $2 AND resource_type = 'project_document'
+    AND resource_ref->>'document_id' = sqlc.arg(document_id)::text
 RETURNING *;
 
 -- name: CreateProjectDocumentRevision :exec
