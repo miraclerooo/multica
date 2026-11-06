@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { configStore } from "@multica/core/config";
 import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
@@ -21,21 +23,63 @@ function renderSection(props: {
   launchedBy?: string | null;
   currentVersion?: string;
 }) {
+  const client = new QueryClient();
   return render(
-    <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      <UpdateSection
-        runtimeId={props.runtimeId}
-        currentVersion={props.currentVersion ?? "v0.4.0"}
-        isOnline
-        launchedBy={props.launchedBy}
-      />
-    </I18nProvider>,
+    <QueryClientProvider client={client}>
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <UpdateSection
+          runtimeId={props.runtimeId}
+          currentVersion={props.currentVersion ?? "v0.4.0"}
+          isOnline
+          launchedBy={props.launchedBy}
+        />
+      </I18nProvider>
+    </QueryClientProvider>,
   );
 }
+
+beforeEach(() => {
+  configStore.getState().setDaemonConfig({ daemonSetupTarget: "cloud" });
+});
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+
+describe("UpdateSection release source", () => {
+  it("waits for config and uses separate release data for each repository", async () => {
+    const fetchRelease = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ tag_name: "v0.4.20" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ tag_name: "v0.4.0" }) });
+    vi.stubGlobal("fetch", fetchRelease);
+    configStore.getState().setDaemonConfigStatus("loading");
+    renderSection({ runtimeId: "runtime-1" });
+
+    expect(fetchRelease).not.toHaveBeenCalled();
+    act(() => configStore.getState().setDaemonConfigStatus("error"));
+    expect(fetchRelease).not.toHaveBeenCalled();
+
+    act(() => configStore.getState().setDaemonConfig({
+      daemonSetupTarget: "self_host",
+      cliReleaseRepository: "example-org/multica",
+    }));
+    expect(await screen.findByText("v0.4.20")).toBeInTheDocument();
+    expect(fetchRelease).toHaveBeenNthCalledWith(
+      1,
+      "https://api.github.com/repos/example-org/multica/releases/latest",
+      expect.anything(),
+    );
+    expect(screen.queryByRole("button", { name: "Update" })).not.toBeInTheDocument();
+
+    act(() => configStore.getState().setDaemonConfig({ daemonSetupTarget: "cloud" }));
+    expect(await screen.findByText("Latest")).toBeInTheDocument();
+    expect(fetchRelease).toHaveBeenNthCalledWith(
+      2,
+      "https://api.github.com/repos/multica-ai/multica/releases/latest",
+      expect.anything(),
+    );
+  });
 });
 
 describe("UpdateSection read-only status", () => {
@@ -107,14 +151,7 @@ describe("UpdateSection read-only status", () => {
 describe("UpdateSection non-release versions", () => {
   const LATEST = "v0.4.20";
 
-  // fetchLatestVersion memoizes the GitHub tag in module scope for 10 minutes,
-  // so without advancing the clock every case here would silently reuse the tag
-  // an earlier test cached rather than its own.
-  let clock = Date.now();
-
   beforeEach(() => {
-    clock += 60 * 60 * 1000;
-    vi.spyOn(Date, "now").mockReturnValue(clock);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -122,10 +159,6 @@ describe("UpdateSection non-release versions", () => {
         json: async () => ({ tag_name: LATEST }),
       }),
     );
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   const NON_RELEASE_VERSIONS = [
