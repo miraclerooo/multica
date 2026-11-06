@@ -225,52 +225,41 @@ function InstructionsStep({ onClose }: { onClose: () => void }) {
       </DialogHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-        <div className="space-y-4">
-          {/* Step 1 owns the platform switch: the install command differs by
-              OS, so the user picks instead of us guessing. Step 2's
-              `multica setup` is platform-independent. */}
-          <CommandStep n={1} label={t(($) => $.connect.step1_label)}>
-            <CliInstallCommand
-              labels={{
-                group: t(($) => $.connect.platform_group),
-                macosLinux: t(($) => $.connect.platform_macos_linux),
-                windows: t(($) => $.connect.platform_windows),
-              }}
-            >
-              {(cmd) => (
-                <CommandRow
-                  cmd={cmd}
-                  copyAria={t(($) => $.connect.copy_aria)}
-                />
-              )}
-            </CliInstallCommand>
-          </CommandStep>
-
-          <div>
-            <CommandStep n={2} label={t(($) => $.connect.step2_label)}>
-              {commands.status === "ready" ? (
+        {commands.status === "ready" ? (
+          <div className="space-y-4">
+            <CommandStep n={1} label={t(($) => $.connect.step1_label)}>
+              <CliInstallCommand
+                labels={{
+                  group: t(($) => $.connect.platform_group),
+                  macosLinux: t(($) => $.connect.platform_macos_linux),
+                  windows: t(($) => $.connect.platform_windows),
+                }}
+              >
+                {(cmd) => (
+                  <CommandRow
+                    cmd={cmd}
+                    copyAria={t(($) => $.connect.copy_aria)}
+                  />
+                )}
+              </CliInstallCommand>
+            </CommandStep>
+            <div>
+              <CommandStep n={2} label={t(($) => $.connect.step2_label)}>
                 <CommandRow
                   cmd={commands.setupCmd}
                   copyAria={t(($) => $.connect.copy_aria)}
                 />
-              ) : (
-                <DaemonSetupNotice status={commands.status} />
-              )}
-            </CommandStep>
-            {commands.status === "ready" && (
+              </CommandStep>
               <p className="mt-1.5 text-micro leading-[1.55] text-muted-foreground">
                 {t(($) => $.connect.step2_hint)}
               </p>
-            )}
+            </div>
+            <LiveListening />
+            <TroubleshootingDetails tokenCmd={commands.tokenCmd} />
           </div>
-
-          {commands.status === "ready" && (
-            <>
-              <LiveListening />
-              <TroubleshootingDetails tokenCmd={commands.tokenCmd} />
-            </>
-          )}
-        </div>
+        ) : (
+          <DaemonSetupNotice status={commands.status} />
+        )}
       </div>
 
       <DialogFooter className="m-0 rounded-b-xl border-t bg-muted/30 px-6 py-3">

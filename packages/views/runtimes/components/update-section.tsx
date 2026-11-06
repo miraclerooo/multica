@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { skipToken, useQuery } from "@tanstack/react-query";
 import {
   Loader2,
   CheckCircle2,
@@ -9,32 +10,21 @@ import {
 } from "@multica/ui/icons";
 import { Button } from "@multica/ui/components/ui/button";
 import { api } from "@multica/core/api";
+import { useConfigStore } from "@multica/core/config";
+import { OFFICIAL_CLI_REPOSITORY } from "@multica/core/runtimes/cli-install";
 import type { RuntimeUpdateStatus } from "@multica/core/types";
 import { useT } from "../../i18n";
 
-const GITHUB_RELEASES_URL =
-  "https://api.github.com/repos/multica-ai/multica/releases/latest";
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
-let cachedLatestVersion: string | null = null;
-let cachedAt = 0;
-
-async function fetchLatestVersion(): Promise<string | null> {
-  if (cachedLatestVersion && Date.now() - cachedAt < CACHE_TTL_MS) {
-    return cachedLatestVersion;
-  }
-  try {
-    const resp = await fetch(GITHUB_RELEASES_URL, {
-      headers: { Accept: "application/vnd.github+json" },
-    });
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    cachedLatestVersion = data.tag_name ?? null;
-    cachedAt = Date.now();
-    return cachedLatestVersion;
-  } catch {
-    return null;
-  }
+async function fetchLatestVersion(repository: string): Promise<string | null> {
+  const response = await fetch(
+    `https://api.github.com/repos/${repository}/releases/latest`,
+    { headers: { Accept: "application/vnd.github+json" } },
+  );
+  if (!response.ok) throw new Error(`CLI release lookup failed: ${response.status}`);
+  const { tag_name: tag } = await response.json();
+  return typeof tag === "string" ? tag : null;
 }
 
 /**
@@ -113,7 +103,21 @@ export function UpdateSection({
 }: UpdateSectionProps) {
   const { t } = useT("runtimes");
   const isManaged = launchedBy === "desktop";
-  const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const repository = useConfigStore((s) =>
+    s.daemonConfigStatus === "ready"
+      ? s.cliReleaseRepository || OFFICIAL_CLI_REPOSITORY
+      : null,
+  );
+  const { data: latestVersion } = useQuery({
+    queryKey: ["cli-latest-version", repository],
+    queryFn:
+      repository && !isManaged ? () => fetchLatestVersion(repository) : skipToken,
+    staleTime: CACHE_TTL_MS,
+    retry: false,
+  });
+  // The daemon selects its own download source. A custom feed is display-only
+  // until the daemon can report which repository it will use.
+  const canUpdate = !!runtimeId && repository === OFFICIAL_CLI_REPOSITORY;
   const [status, setStatus] = useState<RuntimeUpdateStatus | null>(null);
   const [error, setError] = useState("");
   const [output, setOutput] = useState("");
@@ -129,11 +133,6 @@ export function UpdateSection({
   }, []);
 
   useEffect(() => cleanup, [cleanup]);
-
-  // Fetch latest version on mount.
-  useEffect(() => {
-    fetchLatestVersion().then(setLatestVersion);
-  }, []);
 
   const markCompleted = useCallback(
     (message: string) => {
@@ -157,7 +156,7 @@ export function UpdateSection({
   }, [currentVersion, markCompleted, targetVersion, updating]);
 
   const handleUpdate = async () => {
-    if (!latestVersion || !runtimeId) return;
+    if (!latestVersion || !runtimeId || !canUpdate) return;
     cleanup();
     setUpdating(true);
     setTargetVersion(latestVersion);
@@ -209,6 +208,12 @@ export function UpdateSection({
   // up to date when we never parsed its version.
   const isLocalBuild =
     !!currentVersion && parseReleaseVersion(currentVersion) === null;
+  const isLatest =
+    currentVersion &&
+    !isLocalBuild &&
+    latestVersion &&
+    parseReleaseVersion(latestVersion) !== null &&
+    !hasUpdate;
 
   const config = status ? statusConfig[status] : null;
   const Icon = config?.icon;
@@ -240,16 +245,12 @@ export function UpdateSection({
               </span>
             )}
 
-            {!isLocalBuild &&
-              !hasUpdate &&
-              currentVersion &&
-              latestVersion &&
-              !status && (
-                <span className="inline-flex items-center gap-1 text-caption text-success">
-                  <Check className="h-3 w-3" />
-                  {t(($) => $.update.latest)}
-                </span>
-              )}
+            {isLatest && !status && (
+              <span className="inline-flex items-center gap-1 text-caption text-success">
+                <Check className="h-3 w-3" />
+                {t(($) => $.update.latest)}
+              </span>
+            )}
 
             {hasUpdate && !status && (
               <>
@@ -271,7 +272,7 @@ export function UpdateSection({
               </span>
             )}
 
-            {hasUpdate && runtimeId && isOnline && !status && (
+            {hasUpdate && canUpdate && isOnline && !status && (
               <Button
                 variant="outline"
                 size="xs"
@@ -304,7 +305,7 @@ export function UpdateSection({
       {(status === "failed" || status === "timeout") && error && (
         <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2">
           <p className="text-caption text-destructive">{error}</p>
-          {status === "failed" && (
+          {status === "failed" && canUpdate && (
             <Button
               variant="ghost"
               size="xs"

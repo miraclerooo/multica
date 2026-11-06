@@ -69,6 +69,7 @@ function renderDialog(config?: {
   daemonServerUrl?: string;
   daemonAppUrl?: string;
   daemonSetupTarget?: DaemonSetupTarget;
+  cliReleaseRepository?: string;
 }, status: DaemonConfigStatus = "ready") {
   resetConfigStore();
   configStore.getState().setDaemonConfig(config ?? { daemonSetupTarget: "cloud" });
@@ -120,29 +121,41 @@ describe("ConnectRemoteDialog", () => {
     );
   });
 
-  it("withholds setup and token commands until config recovers", () => {
+  it("withholds commands until the self-hosted release source loads", async () => {
+    const user = userEvent.setup();
     const { baseElement } = renderDialog({}, "loading");
     expect(screen.getByRole("status")).toHaveTextContent(
       "Loading connection settings",
     );
+    expect(baseElement).not.toHaveTextContent("raw.githubusercontent.com");
     expect(baseElement).not.toHaveTextContent("multica setup");
     expect(baseElement).not.toHaveTextContent("multica config set");
     act(() => configStore.getState().setDaemonConfigStatus("error"));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Couldn't load connection settings",
     );
+    expect(baseElement).not.toHaveTextContent("raw.githubusercontent.com");
     expect(baseElement).not.toHaveTextContent("multica setup");
     expect(baseElement).not.toHaveTextContent("multica config set");
     act(() => configStore.getState().setDaemonConfig({
       daemonSetupTarget: "self_host",
       daemonServerUrl: "https://api.example.com",
       daemonAppUrl: "https://app.example.com",
+      cliReleaseRepository: "example-org/multica",
     }));
+    expect(baseElement).toHaveTextContent(
+      "curl -fsSL https://raw.githubusercontent.com/example-org/multica/main/scripts/install.sh | MULTICA_RELEASE_REPOSITORY=example-org/multica bash",
+    );
     expect(baseElement).toHaveTextContent(
       "multica setup self-host --server-url https://api.example.com --app-url https://app.example.com",
     );
     expect(baseElement).toHaveTextContent(
       "multica config set server_url https://api.example.com",
+    );
+    await user.click(screen.getByRole("tab", { name: "Windows" }));
+    await user.click(screen.getAllByRole("button", { name: "Copy" })[0]!);
+    expect(clipboard.copyText).toHaveBeenCalledWith(
+      "$env:MULTICA_RELEASE_REPOSITORY='example-org/multica'; irm https://raw.githubusercontent.com/example-org/multica/main/scripts/install.ps1 | iex",
     );
   });
 
@@ -154,7 +167,7 @@ describe("ConnectRemoteDialog", () => {
     expect(screen.getByRole("alert")).toBeInTheDocument();
     expect(baseElement).not.toHaveTextContent("multica setup");
     expect(baseElement).not.toHaveTextContent("multica config set");
-    expect(screen.getAllByRole("button", { name: "Copy" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Copy" })).not.toBeInTheDocument();
   });
 
   // The install command is OS-specific, so the dialog can't hardcode one.
